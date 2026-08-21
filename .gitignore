@@ -1,0 +1,19 @@
+# Dependencies
+frontend/node_modules/
+
+# Build outputs
+app/www/
+app/server/fntube
+FnTube.fpk
+
+# Go build cache & dev
+.dev/
+
+# TypeScript build info
+frontend/tsconfig.tsbuildinfo
+
+# IDE & agent
+.trae/
+
+# macOS
+.DS_Store

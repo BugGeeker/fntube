@@ -1,0 +1,919 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "飞牛影视（fnOS TrimMedia）服务端 API",
+    "version": "1.0.0",
+    "description": "FnTube「飞牛 client」实际调用的上游飞牛影视（fnOS TrimMedia）服务端接口集合。\n\n## 服务地址\n默认 baseUrl 形如 `http://IP:端口/v`（含 `/v` 后缀）。用户配置的「服务端地址」若未以 `/v` 结尾，客户端会自动补 `/v` 后重试。\n\n## 鉴权\n所有 `/api/*` 接口需要携带以下请求头：\n- `Authorization`: 登录接口返回的 `data.token`（登录前不携带）。\n- `authx`: 请求签名，格式 `nonce={6位随机数}&timestamp={毫秒时间戳}&sign={md5签名}`。\n\n签名算法（Go 实现见 `client.getAuthx`）：\n```\napiPathStr = \"/v\" + apiPath（例如 /v/api/v1/item/list）\ndataHash   = md5(body)          // GET 且无 body 时为 query string 的编码值\nsign       = md5(secret + \"_\" + apiPathStr + \"_\" + nonce + \"_\" + ts + \"_\" + dataHash + \"_\" + apiKey)\n```\n其中 `apiKey`、`secret` 为客户端内置常量（`16CCEB3D-AB42-077D-36A1-F355324E4237` / `NDzZTVxnRKP8Z0jXg1VAMonaG8akvh`）。\n\n## 统一响应结构\n所有 `/api/*` 接口返回统一包裹：`{ \"code\": int, \"msg\": string, \"data\": ... }`，`code == 0` 表示成功。\n"
+  },
+  "servers": [
+    {
+      "url": "{{baseUrl}}",
+      "description": "飞牛影视服务端地址（含 /v），例如 http://127.0.0.1:5666/v"
+    },
+    {
+      "url": "{{hostRoot}}",
+      "description": "主机根地址（不含 /v），仅访问码校验接口使用，例如 http://127.0.0.1:5666"
+    }
+  ],
+  "security": [
+    {
+      "Authorization": [],
+      "authx": []
+    }
+  ],
+  "tags": [
+    { "name": "认证", "description": "访问码校验、登录与退出" },
+    { "name": "用户", "description": "用户信息与用户管理" },
+    { "name": "系统", "description": "版本号与图片资源" },
+    { "name": "媒体库", "description": "媒体库列表、扫描与统计" },
+    { "name": "媒体项", "description": "媒体条目列表、详情与删除" },
+    { "name": "搜索", "description": "搜索影片与演员" },
+    { "name": "剧集", "description": "季与剧集列表" },
+    { "name": "演职员", "description": "媒体演职员列表" },
+    { "name": "播放", "description": "继续观看列表" },
+    { "name": "任务", "description": "后台任务状态" }
+  ],
+  "paths": {
+    "/c/{code}": {
+      "get": {
+        "tags": ["认证"],
+        "summary": "访问码校验",
+        "operationId": "verifyAccessCode",
+        "description": "校验访问码。注意：此接口基于主机根地址（不含 /v 后缀），使用服务器 `{{hostRoot}}`；返回非 JSON（HTML/跳转），HTTP 200 表示校验通过，404 表示访问码错误。客户端仅在开启了「访问码」时才调用。",
+        "servers": [{ "url": "{{hostRoot}}" }],
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "description": "访问码",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "访问码校验通过" },
+          "404": { "description": "访问码错误" }
+        }
+      }
+    },
+    "/api/v2/user/loginByPassword": {
+      "post": {
+        "tags": ["认证"],
+        "summary": "登录（v2，SHA256 密码）",
+        "operationId": "loginByPasswordV2",
+        "description": "优先使用的 v2 登录协议，密码传输 SHA256 摘要。返回 data.token。v2 接口不存在时客户端回退到 v1 明文登录。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginV2Request" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "登录结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 0 },
+                    "msg": { "type": "string", "example": "" },
+                    "data": { "$ref": "#/components/schemas/TokenData" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/login": {
+      "post": {
+        "tags": ["认证"],
+        "summary": "登录（v1 回退，明文密码）",
+        "operationId": "loginV1",
+        "description": "旧版服务端的明文登录协议，仅当 v2 接口不可用时回退调用。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginV1Request" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "登录结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 0 },
+                    "msg": { "type": "string", "example": "" },
+                    "data": { "$ref": "#/components/schemas/TokenData" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/logout": {
+      "post": {
+        "tags": ["认证"],
+        "summary": "退出登录",
+        "operationId": "logout",
+        "description": "退出当前登录账号，使 Authorization token 失效。",
+        "responses": {
+          "200": {
+            "description": "退出结果",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/EmptyEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/info": {
+      "get": {
+        "tags": ["用户"],
+        "summary": "当前用户信息",
+        "operationId": "userInfo",
+        "description": "获取当前登录用户信息，含 guid、username、is_admin。",
+        "responses": {
+          "200": {
+            "description": "用户信息",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 0 },
+                    "msg": { "type": "string", "example": "" },
+                    "data": { "$ref": "#/components/schemas/User" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/manager/user/list": {
+      "get": {
+        "tags": ["用户"],
+        "summary": "用户列表（管理员）",
+        "operationId": "userList",
+        "description": "获取全部用户列表，仅管理员账号有权访问。data 为 User 数组。",
+        "responses": {
+          "200": {
+            "description": "用户列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 0 },
+                    "msg": { "type": "string", "example": "" },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/User" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sys/version": {
+      "get": {
+        "tags": ["系统"],
+        "summary": "获取飞牛影视版本号",
+        "operationId": "sysVersion",
+        "description": "获取前端与后端（mediasrv）版本号，也用于探测服务是否可连接。data.version 为前端版本，data.mediasrvVersion 为后端版本。",
+        "responses": {
+          "200": {
+            "description": "版本信息",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 0 },
+                    "msg": { "type": "string", "example": "" },
+                    "data": { "$ref": "#/components/schemas/VersionData" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sys/img/{path}": {
+      "get": {
+        "tags": ["系统"],
+        "summary": "获取图片资源",
+        "operationId": "getImg",
+        "description": "获取海报/背景/Logo 等图片资源。path 为图片相对路径，可能包含多级斜杠（如 poster/xxx.jpg），由客户端对图片字段拼接 `/sys/img` 得到。",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "description": "图片相对路径（可含 /，如 poster/xxx.jpg）",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "w",
+            "in": "query",
+            "required": false,
+            "description": "缩略图宽度（可选），如 w=256",
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "图片二进制内容",
+            "content": {
+              "image/*": { "schema": { "type": "string", "format": "binary" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mediadb/list": {
+      "get": {
+        "tags": ["媒体库"],
+        "summary": "媒体库列表（普通用户）",
+        "operationId": "mediaDbList",
+        "description": "普通用户视角的媒体库列表。data 为 { list: MediaDb[] }。",
+        "parameters": [
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "description": "每页数量，客户端固定传 9999",
+            "schema": { "type": "integer", "default": 9999 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "媒体库列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 0 },
+                    "msg": { "type": "string", "example": "" },
+                    "data": { "$ref": "#/components/schemas/MediaDbListData" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mdb/list": {
+      "get": {
+        "tags": ["媒体库"],
+        "summary": "媒体库列表（管理员）",
+        "operationId": "mdbList",
+        "description": "管理员视角的媒体库列表，name 字段为库名。data 为 { list: MediaDb[] }。",
+        "parameters": [
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "description": "每页数量，客户端固定传 9999",
+            "schema": { "type": "integer", "default": 9999 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "媒体库列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 0 },
+                    "msg": { "type": "string", "example": "" },
+                    "data": { "$ref": "#/components/schemas/MediaDbListData" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mdb/scanall": {
+      "post": {
+        "tags": ["媒体库"],
+        "summary": "扫描所有媒体库（管理员）",
+        "operationId": "mdbScanAll",
+        "description": "触发全库扫描，仅管理员可用。请求体为空对象。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/EmptyBody" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "扫描结果",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/EmptyEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mdb/scan/{guid}": {
+      "post": {
+        "tags": ["媒体库"],
+        "summary": "扫描指定媒体库（管理员）",
+        "operationId": "mdbScan",
+        "description": "按媒体库 guid 触发扫描，仅管理员可用。请求体为空对象。",
+        "parameters": [
+          {
+            "name": "guid",
+            "in": "path",
+            "required": true,
+            "description": "媒体库 GUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/EmptyBody" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "扫描结果",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/EmptyEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mediadb/sum": {
+      "get": {
+        "tags": ["媒体库"],
+        "summary": "媒体数量统计",
+        "operationId": "mediaDbSum",
+        "description": "获取媒体库数量统计（电影/剧集/视频/收藏/总数）。",
+        "responses": {
+          "200": {
+            "description": "统计结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 0 },
+                    "msg": { "type": "string", "example": "" },
+                    "data": { "$ref": "#/components/schemas/MediaDbSummary" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/item/list": {
+      "post": {
+        "tags": ["媒体项"],
+        "summary": "媒体列表",
+        "operationId": "itemList",
+        "description": "按类型/媒体库/排序/分页查询媒体条目列表（也用于按库统计数量）。data 为 { list: Item[], total: int }。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ItemListRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "媒体列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 0 },
+                    "msg": { "type": "string", "example": "" },
+                    "data": { "$ref": "#/components/schemas/ItemListData" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/item/{guid}": {
+      "get": {
+        "tags": ["媒体项"],
+        "summary": "媒体详情",
+        "operationId": "itemDetail",
+        "description": "获取单个媒体条目详情。",
+        "parameters": [
+          {
+            "name": "guid",
+            "in": "path",
+            "required": true,
+            "description": "媒体条目 GUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "媒体详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 0 },
+                    "msg": { "type": "string", "example": "" },
+                    "data": { "$ref": "#/components/schemas/Item" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["媒体项"],
+        "summary": "删除媒体",
+        "operationId": "deleteItem",
+        "description": "删除媒体条目。delete_file=1 删除媒体文件，0 仅从媒体库移除。",
+        "parameters": [
+          {
+            "name": "guid",
+            "in": "path",
+            "required": true,
+            "description": "媒体条目 GUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DeleteItemRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "删除结果",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/EmptyEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/search/list": {
+      "get": {
+        "tags": ["搜索"],
+        "summary": "搜索影片与演员",
+        "operationId": "searchList",
+        "description": "按关键词搜索影片与演员。data 为 Item 数组。",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "搜索关键词",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "搜索结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 0 },
+                    "msg": { "type": "string", "example": "" },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Item" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/season/list/{tvGuid}": {
+      "get": {
+        "tags": ["剧集"],
+        "summary": "季列表",
+        "operationId": "seasonList",
+        "description": "获取指定剧集的季列表。data 为 Item 数组（每项为 Season 类型）。",
+        "parameters": [
+          {
+            "name": "tvGuid",
+            "in": "path",
+            "required": true,
+            "description": "剧（TV）GUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "季列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 0 },
+                    "msg": { "type": "string", "example": "" },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Item" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/episode/list/{seasonGuid}": {
+      "get": {
+        "tags": ["剧集"],
+        "summary": "剧集列表",
+        "operationId": "episodeList",
+        "description": "获取指定季的剧集列表。data 为 Item 数组（每项为 Episode 类型）。",
+        "parameters": [
+          {
+            "name": "seasonGuid",
+            "in": "path",
+            "required": true,
+            "description": "季 GUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "剧集列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 0 },
+                    "msg": { "type": "string", "example": "" },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Item" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/person/list/{guid}": {
+      "post": {
+        "tags": ["演职员"],
+        "summary": "演职员列表",
+        "operationId": "personList",
+        "description": "获取指定媒体的演职员列表。data 为 { total: int, list: Person[] }。",
+        "parameters": [
+          {
+            "name": "guid",
+            "in": "path",
+            "required": true,
+            "description": "媒体条目 GUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "演职员列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 0 },
+                    "msg": { "type": "string", "example": "" },
+                    "data": { "$ref": "#/components/schemas/PersonListData" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/play/list": {
+      "get": {
+        "tags": ["播放"],
+        "summary": "继续观看列表",
+        "operationId": "playList",
+        "description": "获取继续观看（播放历史）列表。data 为 Item 数组。",
+        "responses": {
+          "200": {
+            "description": "继续观看列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 0 },
+                    "msg": { "type": "string", "example": "" },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Item" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/task/running": {
+      "get": {
+        "tags": ["任务"],
+        "summary": "是否有任务运行中",
+        "operationId": "taskRunning",
+        "description": "查询当前是否有后台任务（如扫描）正在运行，用于避免重复触发导致 Task duplicate 错误。",
+        "responses": {
+          "200": {
+            "description": "任务运行状态",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/EmptyEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "Authorization": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "登录接口返回的 data.token（登录/访问码校验接口可不携带）"
+      },
+      "authx": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "authx",
+        "description": "请求签名，格式 nonce=xxx&timestamp=xxx&sign=xxx，算法见 info.description"
+      }
+    },
+    "schemas": {
+      "EmptyBody": {
+        "type": "object",
+        "description": "空请求体（客户端固定发送 {} ）",
+        "additionalProperties": true
+      },
+      "EmptyEnvelope": {
+        "type": "object",
+        "description": "统一响应包裹（无具名 data 场景）",
+        "properties": {
+          "code": { "type": "integer", "description": "0 表示成功", "example": 0 },
+          "msg": { "type": "string", "example": "" },
+          "data": { "description": "业务数据，随接口而定" }
+        }
+      },
+      "TokenData": {
+        "type": "object",
+        "properties": {
+          "token": { "type": "string", "description": "登录令牌，后续接口放入 Authorization 头" }
+        }
+      },
+      "LoginV2Request": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": { "type": "string", "description": "用户名" },
+          "password": { "type": "string", "description": "密码的 SHA256 十六进制摘要" },
+          "app_name": { "type": "string", "description": "应用标识，客户端固定 \"trimemedia-web\"", "example": "trimemedia-web" }
+        }
+      },
+      "LoginV1Request": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": { "type": "string", "description": "用户名" },
+          "password": { "type": "string", "description": "明文密码（仅旧版服务端回退使用）" },
+          "app_name": { "type": "string", "description": "应用标识，客户端固定 \"trimemedia-web\"", "example": "trimemedia-web" }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "guid": { "type": "string" },
+          "username": { "type": "string" },
+          "is_admin": { "type": "integer", "description": "1 表示管理员" }
+        }
+      },
+      "VersionData": {
+        "type": "object",
+        "properties": {
+          "version": { "type": "string", "description": "前端版本" },
+          "mediasrvVersion": { "type": "string", "description": "后端（mediasrv）版本" }
+        }
+      },
+      "MediaDb": {
+        "type": "object",
+        "properties": {
+          "guid": { "type": "string", "description": "媒体库 GUID" },
+          "category": { "type": "string", "description": "分类：Movie / TV / Mix / Others 等" },
+          "name": { "type": "string", "description": "媒体库名称（管理员接口为 name，普通用户接口为 title）" },
+          "posters": { "type": "array", "items": { "type": "string" }, "description": "海报路径" },
+          "dir_list": { "type": "array", "items": { "type": "string" }, "description": "物理目录列表" }
+        }
+      },
+      "MediaDbListData": {
+        "type": "object",
+        "properties": {
+          "list": { "type": "array", "items": { "$ref": "#/components/schemas/MediaDb" } }
+        }
+      },
+      "MediaDbSummary": {
+        "type": "object",
+        "properties": {
+          "movie": { "type": "integer" },
+          "tv": { "type": "integer" },
+          "video": { "type": "integer" },
+          "favorite": { "type": "integer" },
+          "total": { "type": "integer" }
+        }
+      },
+      "ItemListRequest": {
+        "type": "object",
+        "required": ["tags", "page", "page_size"],
+        "properties": {
+          "tags": {
+            "type": "object",
+            "description": "类型过滤",
+            "properties": {
+              "type": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "类型列表：Movie / TV / Season / Episode / Video / Directory"
+              }
+            }
+          },
+          "sort_type": { "type": "string", "description": "排序方向 ASC / DESC", "example": "DESC" },
+          "sort_column": { "type": "string", "description": "排序字段", "example": "create_time" },
+          "page": { "type": "integer", "description": "页码（从 1 开始）", "example": 1 },
+          "page_size": { "type": "integer", "description": "每页数量", "example": 20 },
+          "ancestor_guid": { "type": "string", "description": "上级媒体库 GUID，为空则全部" },
+          "exclude_grouped_video": { "type": "integer", "description": "1 表示排除分组的视频", "example": 1 }
+        }
+      },
+      "ItemListData": {
+        "type": "object",
+        "properties": {
+          "list": { "type": "array", "items": { "$ref": "#/components/schemas/Item" } },
+          "total": { "type": "integer" }
+        }
+      },
+      "DeleteItemRequest": {
+        "type": "object",
+        "properties": {
+          "delete_file": { "type": "integer", "description": "1 删除媒体文件，0 仅从媒体库移除", "example": 0 },
+          "media_guids": { "type": "array", "items": { "type": "string" }, "description": "关联媒体 GUID 列表" }
+        }
+      },
+      "PersonListData": {
+        "type": "object",
+        "properties": {
+          "total": { "type": "integer" },
+          "list": { "type": "array", "items": { "$ref": "#/components/schemas/Person" } }
+        }
+      },
+      "MediaStream": {
+        "type": "object",
+        "properties": {
+          "resolutions": { "type": "array", "items": { "type": "string" } },
+          "audio_type": { "type": "array", "items": { "type": "string" } },
+          "color_range_type": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "Item": {
+        "type": "object",
+        "description": "媒体条目（对齐 /item 接口响应字段）",
+        "properties": {
+          "guid": { "type": "string" },
+          "ancestor_guid": { "type": "string" },
+          "type": { "type": "string", "description": "Movie / TV / Season / Episode / Video / Directory" },
+          "tv_title": { "type": "string" },
+          "parent_title": { "type": "string" },
+          "title": { "type": "string" },
+          "original_title": { "type": "string" },
+          "overview": { "type": "string" },
+          "poster": { "type": "string" },
+          "backdrops": { "type": "string" },
+          "posters": { "type": "string" },
+          "logos": { "type": "string" },
+          "douban_id": { "type": "integer" },
+          "imdb_id": { "type": "string" },
+          "trim_id": { "type": "string", "description": "飞牛 TMDB ID（tt* 表示电影，tm* 表示剧集）" },
+          "release_date": { "type": "string" },
+          "air_date": { "type": "string" },
+          "vote_average": { "type": "string" },
+          "season_number": { "type": "integer" },
+          "episode_number": { "type": "integer" },
+          "duration": { "type": "integer", "description": "片长（秒）" },
+          "ts": { "type": "integer", "description": "已播放（秒）" },
+          "watched": { "type": "integer", "description": "1 表示已看完" },
+          "poster_width": { "type": "integer" },
+          "poster_height": { "type": "integer" },
+          "genres": { "type": "array", "items": { "type": "integer" } },
+          "runtime": { "type": "integer", "description": "片长（分钟）" },
+          "production_countries": { "type": "array", "items": { "type": "string" } },
+          "is_favorite": { "type": "integer" },
+          "is_watched": { "type": "integer" },
+          "watched_ts": { "type": "integer" },
+          "number_of_episodes": { "type": "integer" },
+          "local_number_of_episodes": { "type": "integer" },
+          "local_number_of_seasons": { "type": "integer" },
+          "can_play": { "type": "integer" },
+          "play_error": { "type": "string" },
+          "parent_guid": { "type": "string" },
+          "ancestor_name": { "type": "string" },
+          "ancestor_category": { "type": "string" },
+          "play_item_guid": { "type": "string" },
+          "logic_type": { "type": "integer" },
+          "media_stream": { "$ref": "#/components/schemas/MediaStream" }
+        }
+      },
+      "Person": {
+        "type": "object",
+        "description": "演职员信息",
+        "properties": {
+          "item_guid": { "type": "string" },
+          "person_guid": { "type": "string" },
+          "role": { "type": "string" },
+          "job": { "type": "string" },
+          "order": { "type": "integer" },
+          "department": { "type": "string" },
+          "trim_id": { "type": "string" },
+          "imdb_id": { "type": "string" },
+          "tmdb_id": { "type": "integer" },
+          "lan": { "type": "string" },
+          "name": { "type": "string" },
+          "original_name": { "type": "string" },
+          "also_know_as": { "type": "string" },
+          "biography": { "type": "string" },
+          "known_for_department": { "type": "string" },
+          "profile_path": { "type": "string" },
+          "gender": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

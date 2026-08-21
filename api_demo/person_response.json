@@ -1,0 +1,47 @@
+{
+    "msg": "",
+    "code": 0,
+    "data": {
+        "total": 20,
+        "list": [
+            {
+                "item_guid": "c0767314e0114b3ba133348823263bb5",
+                "person_guid": "52f39cd2b7fd41b1a63246d91c1cac8b",
+                "role": "",
+                "job": "Director",
+                "order": 1,
+                "department": "",
+                "trim_id": "tp4894331",
+                "imdb_id": "",
+                "tmdb_id": 4894331,
+                "lan": "zh-CN",
+                "name": "刘闻洋",
+                "original_name": "刘闻洋",
+                "also_know_as": "",
+                "biography": "",
+                "known_for_department": "Production",
+                "profile_path": "",
+                "gender": 0
+            },
+            {
+                "item_guid": "c0767314e0114b3ba133348823263bb5",
+                "person_guid": "3084401304d94b9e88db19d6f4d7ab99",
+                "role": "Yang Qianhuan",
+                "job": "Actor",
+                "order": 2,
+                "department": "",
+                "trim_id": "tp2178031",
+                "imdb_id": "nm3530313",
+                "tmdb_id": 2178031,
+                "lan": "zh-CN",
+                "name": "刘冠麟",
+                "original_name": "刘冠麟",
+                "also_know_as": "",
+                "biography": "刘冠麟，1981年12月19日出生于黑龙江，毕业于北京舞蹈学院音乐剧系。  2005年，参演电视剧《大汉天子3》，饰演季擒虎。 2008年3月，加盟了宁财神自编自导的12集古装剧《龙虎山客栈》。2011年1月，出演张纪中执导的古装动作戏《菊花醉》 。2013年，刘冠麟加盟了宁财神执导的古装职场轻喜剧《龙门镖局》 。2014年，与秦海璐、胡冰共同主演都市时尚情感作品《妈妈向前冲》  。同年参演电视剧《十月围城》。",
+                "known_for_department": "Acting",
+                "profile_path": "/1a/17/RXFg9YOlYYTNwMynBkZifbn3VpVnzd401lk1CjS099E0CKLruk4L8OkR6qp8WFsHNelMygVkowjeq2sIKdqVG1z5MN.webp",
+                "gender": 0
+            }
+        ]
+    }
+}

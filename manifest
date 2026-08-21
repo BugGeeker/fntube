@@ -1,0 +1,10 @@
+appname               = FnTube
+version               = 1.0.0
+display_name          = FnTube
+desc                  = FnTube - 飞牛应用包，基于 Go + Hertz + SQLite 后端与 Vue3 + Ant Design Vue 前端
+platform              = x86
+source                = thirdparty
+maintainer            = BugGeeker
+distributor           = BugGeeker
+desktop_uidir         = ui
+desktop_applaunchname = FnTube.Application

@@ -1,0 +1,35 @@
+package router
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/app/server"
+	"gorm.io/gorm"
+
+	"fntube/internal/handler"
+	"fntube/internal/trimmedia"
+)
+
+// Register 注册所有路由
+func Register(h *server.Hertz, db *gorm.DB, trimSvc *trimmedia.Service) {
+	// 健康检查
+	h.GET("/api/health", func(ctx context.Context, c *app.RequestContext) {
+		c.JSON(200, map[string]string{"status": "ok"})
+	})
+
+	// 飞牛影视
+	handler.RegisterTrimMediaHandlers(h, db, trimSvc)
+
+	// MetaTube
+	handler.RegisterMetaTubeHandlers(h, db)
+
+	// 静态文件托管（前端构建产物），优先从应用安装目录读取
+	staticDir := "./app/www"
+	if appDest := os.Getenv("TRIM_APPDEST"); appDest != "" {
+		staticDir = filepath.Join(appDest, "app", "www")
+	}
+	h.Static("/", staticDir)
+}
