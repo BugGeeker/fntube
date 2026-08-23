@@ -36,10 +36,10 @@ export interface MediaServerItem {
   tv_title: string
   parent_title: string
   title: string
-  logos: string
+  logo: string
   original_title: string
-  backdrops: string
-  posters: string
+  backdrop: string
+  poster: string
   poster_width: number
   poster_height: number
   vote_average: string

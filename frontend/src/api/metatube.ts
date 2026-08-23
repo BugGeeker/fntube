@@ -56,3 +56,21 @@ export const saveConfig = (data: MetaTubeConfig) =>
 
 export const testConnection = (data: Partial<MetaTubeConfig>) =>
   request.post<{ status: string; app?: string; version?: string; token_valid?: boolean }>('/metatube/test', data)
+
+// 影片搜索结果
+export interface MovieSearchResult {
+  id: string
+  number: string
+  title: string
+  provider: string
+  homepage: string
+  thumb_url: string
+  cover_url: string
+  score: number
+  actors?: string[]
+  release_date: string
+}
+
+// 搜索影片
+export const searchMovies = (q: string) =>
+  request.get<{ data: MovieSearchResult[] }>('/metatube/search', { params: { q } })

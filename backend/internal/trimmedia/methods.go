@@ -228,8 +228,8 @@ func (c *Client) DeleteItem(guid string, deleteFile bool) (bool, error) {
 		delFlag = 1
 	}
 	res, err := c.request(fmt.Sprintf("/item/%s", guid), "DELETE", nil, map[string]interface{}{
-		"delete_file":  delFlag,
-		"media_guids":  []interface{}{},
+		"delete_file": delFlag,
+		"media_guids": []interface{}{},
 	}, "", false)
 	if err != nil || !res.Success() {
 		return false, fmt.Errorf("delete item failed: %v", err)
@@ -361,15 +361,16 @@ func (c *Client) buildItem(info map[string]interface{}) Item {
 	b, _ := json.Marshal(info)
 	_ = json.Unmarshal(b, &item)
 	item.Type = ParseType(getString(info, "type"))
-	item.Posters = c.buildImgAPIURL(getString(info, "posters"))
-	item.Backdrops = c.buildImgAPIURL(getString(info, "backdrops"))
-	item.Logos = c.buildImgAPIURL(getString(info, "logos"))
+	// 列表API: poster(单数); 详情API: posters(复数)
 	poster := getString(info, "poster")
-	if poster != "" {
-		item.Poster = c.buildImgAPIURL(poster)
-	} else {
-		item.Poster = item.Posters
+	if poster == "" {
+		poster = getString(info, "posters")
 	}
+	item.Poster = c.buildImgAPIURL(poster)
+	// 详情API: backdrops(复数), 列表API无此字段
+	item.Backdrop = c.buildImgAPIURL(getString(info, "backdrops"))
+	// 详情API: logos(复数), 列表API无此字段
+	item.Logo = c.buildImgAPIURL(getString(info, "logos"))
 	return item
 }
 

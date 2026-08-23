@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { getConfig, saveConfig, testConnection, type MetaTubeConfig } from '@/api/metatube'
+import { getConfig, saveConfig, testConnection, searchMovies, type MetaTubeConfig, type MovieSearchResult } from '@/api/metatube'
 
 export const useMetaTubeStore = defineStore('metatube', () => {
   const config = ref<MetaTubeConfig | null>(null)
   const loading = ref(false)
   const connected = ref(false)
+  const searchResults = ref<MovieSearchResult[]>([])
 
   async function fetchConfig() {
     loading.value = true
@@ -29,12 +30,24 @@ export const useMetaTubeStore = defineStore('metatube', () => {
     return result
   }
 
+  async function searchMoviesData(q: string) {
+    loading.value = true
+    try {
+      const { data } = await searchMovies(q)
+      searchResults.value = data.data || []
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     config,
     loading,
     connected,
+    searchResults,
     fetchConfig,
     saveConfigData,
     testConnectionData,
+    searchMoviesData,
   }
 })

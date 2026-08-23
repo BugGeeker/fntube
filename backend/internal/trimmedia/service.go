@@ -500,10 +500,10 @@ func (s *Service) buildMediaServerItem(item Item) MediaServerItem {
 		TVTitle:               item.TVTitle,
 		ParentTitle:           item.ParentTitle,
 		Title:                 item.Title,
-		Logos:                 item.Logos,
+		Logo:                  item.Logo,
 		OriginalTitle:         item.OriginalTitle,
-		Backdrops:             item.Backdrops,
-		Posters:               item.Posters,
+		Backdrop:              item.Backdrop,
+		Poster:                item.Poster,
 		PosterWidth:           item.PosterWidth,
 		PosterHeight:          item.PosterHeight,
 		VoteAverage:           item.VoteAverage,
@@ -630,10 +630,10 @@ type MediaServerItem struct {
 	TVTitle               string      `json:"tv_title"`
 	ParentTitle           string      `json:"parent_title"`
 	Title                 string      `json:"title"`
-	Logos                 string      `json:"logos"`
+	Logo                  string      `json:"logo"`
 	OriginalTitle         string      `json:"original_title"`
-	Backdrops             string      `json:"backdrops"`
-	Posters               string      `json:"posters"`
+	Backdrop              string      `json:"backdrop"`
+	Poster                string      `json:"poster"`
 	PosterWidth           int         `json:"poster_width"`
 	PosterHeight          int         `json:"poster_height"`
 	VoteAverage           string      `json:"vote_average"`

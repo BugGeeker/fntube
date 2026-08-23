@@ -15,8 +15,8 @@
             <a-card hoverable size="small" @click="showDetail(item)" style="overflow: hidden">
               <template #cover>
                 <img
-                  v-if="item.posters"
-                  :src="proxyImage(item.posters)"
+                  v-if="item.poster"
+                  :src="proxyImage(item.poster)"
                   style="height: 200px; width: 100%; object-fit: cover"
                   alt="poster"
                 />
@@ -41,14 +41,47 @@
       </a-spin>
     </a-card>
 
-    <!-- 媒体详情抽屉 -->
-    <a-drawer
+    <!-- 媒体详情弹窗 -->
+    <a-modal
       v-model:open="detailVisible"
-      width="500"
+      width="1000px"
       :title="store.currentItem?.title || '详情'"
-      placement="right"
+      :footer="null"
+      :body-style="{ maxHeight: '80vh', overflow: 'auto' }"
     >
       <template v-if="store.currentItem">
+        <!-- 顶部图片横向布局 -->
+        <div
+          v-if="store.currentItem.backdrop || store.currentItem.poster || store.currentItem.logo"
+          style="display: flex; gap: 12px; margin-bottom: 16px;"
+        >
+          <!-- 封面 -->
+          <div style="flex: 1; min-width: 0;">
+            <img
+              :src="proxyImage(store.currentItem.poster)"
+              style="width: 100%; height: 200px; object-fit: contain; border-radius: 8px;"
+              alt="poster"
+            />
+          </div>
+          <!-- 背景图 -->
+          <div style="flex: 1; min-width: 0;">
+            <img
+              :src="proxyImage(store.currentItem.backdrop)"
+              style="width: 100%; height: 200px; object-fit: contain; border-radius: 8px;"
+              alt="backdrop"
+            />
+          </div>
+          
+          <!-- Logo -->
+          <div style="flex: 1; min-width: 0;">
+            <img
+              :src="proxyImage(store.currentItem.logo)"
+              style="width: 100%; height: 200px; object-fit: contain; border-radius: 8px; background: #1a1a2e;"
+              alt="logo"
+            />
+          </div>
+        </div>
+
         <div style="margin-bottom: 16px">
           <h3>{{ store.currentItem.title }}</h3>
           <p v-if="store.currentItem.original_title && store.currentItem.original_title !== store.currentItem.title" style="color: #999">
@@ -117,13 +150,69 @@
         </div>
 
         <div style="margin-top: 24px">
-          <a-button type="primary" :loading="gettingURL" @click="handlePlay">
-            <template #icon><PlayCircleOutlined /></template>
-            播放
-          </a-button>
+          <a-space>
+            <a-button type="primary" :loading="gettingURL" @click="handlePlay">
+              <template #icon><PlayCircleOutlined /></template>
+              播放
+            </a-button>
+            <a-button :loading="searching" @click="handleSearch">
+              <template #icon><SearchOutlined /></template>
+              搜索
+            </a-button>
+          </a-space>
         </div>
       </template>
-    </a-drawer>
+    </a-modal>
+
+    <!-- MetaTube 搜索结果弹窗 -->
+    <a-modal
+      v-model:open="searchVisible"
+      width="800px"
+      title="MetaTube 搜索结果"
+      :footer="null"
+      :body-style="{ maxHeight: '70vh', overflow: 'auto' }"
+    >
+      <a-spin :spinning="searching">
+        <a-empty v-if="!searching && metaTubeStore.searchResults.length === 0" description="无搜索结果" />
+        <a-row :gutter="[16, 16]">
+          <a-col
+            v-for="result in metaTubeStore.searchResults"
+            :key="result.id + result.provider"
+            :xs="24" :sm="12" :md="8"
+          >
+            <a-card hoverable size="small" style="overflow: hidden">
+              <template #cover>
+                <img
+                  v-if="result.thumb_url || result.cover_url"
+                  :src="result.thumb_url || result.cover_url"
+                  style="height: 200px; width: 100%; object-fit: cover"
+                  alt="cover"
+                />
+                <div v-else style="height: 200px; display: flex; align-items: center; justify-content: center; background: #f5f5f5">
+                  <span style="color: #999; font-size: 24px">{{ result.number?.charAt(0) || '?' }}</span>
+                </div>
+              </template>
+              <a-card-meta>
+                <template #title>
+                  <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ result.number }}</div>
+                </template>
+                <template #description>
+                  <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px">{{ result.title }}</div>
+                  <a-space size="small" wrap>
+                    <a-tag v-if="result.provider" color="blue">{{ result.provider }}</a-tag>
+                    <a-tag v-if="result.release_date">{{ result.release_date }}</a-tag>
+                    <a-tag v-if="result.score" color="orange">评分 {{ result.score }}</a-tag>
+                  </a-space>
+                </template>
+              </a-card-meta>
+              <div v-if="result.actors && result.actors.length > 0" style="margin-top: 8px; font-size: 12px; color: #999">
+                演员: {{ result.actors.join('、') }}
+              </div>
+            </a-card>
+          </a-col>
+        </a-row>
+      </a-spin>
+    </a-modal>
   </div>
 </template>
 
@@ -131,17 +220,21 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { PlayCircleOutlined } from '@ant-design/icons-vue'
+import { PlayCircleOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import { useTrimMediaStore } from '@/stores/trimmedia'
+import { useMetaTubeStore } from '@/stores/metatube'
 import { proxyImage } from '@/utils/image'
 import type { MediaServerItem } from '@/api/trimmedia'
 
 const route = useRoute()
 const router = useRouter()
 const store = useTrimMediaStore()
+const metaTubeStore = useMetaTubeStore()
 
 const detailVisible = ref(false)
 const gettingURL = ref(false)
+const searchVisible = ref(false)
+const searching = ref(false)
 
 const libraryId = computed(() => route.params.id as string)
 const libraryName = computed(() => {
@@ -198,6 +291,24 @@ async function handlePlay() {
     message.error('获取播放链接失败')
   } finally {
     gettingURL.value = false
+  }
+}
+
+async function handleSearch() {
+  if (!store.currentItem) return
+  const keyword = store.currentItem.parent_title || store.currentItem.title
+  if (!keyword) {
+    message.warning('无法获取搜索关键词')
+    return
+  }
+  searchVisible.value = true
+  searching.value = true
+  try {
+    await metaTubeStore.searchMoviesData(keyword)
+  } catch {
+    message.error('MetaTube 搜索失败')
+  } finally {
+    searching.value = false
   }
 }
 </script>
