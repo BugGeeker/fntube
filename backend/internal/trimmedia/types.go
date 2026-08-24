@@ -78,6 +78,18 @@ type Version struct {
 	Backend  string `json:"backend"`
 }
 
+// Genre 媒体类型
+type Genre struct {
+	ID    int    `json:"id"`
+	Value string `json:"value"`
+}
+
+// Country 国家地区
+type Country struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 // Item 媒体项
 type Item struct {
 	GUID                  string      `json:"guid"`
@@ -151,6 +163,18 @@ type Person struct {
 	Gender             int    `json:"gender"`
 }
 
+// PersonSearchResult 演员搜索结果
+type PersonSearchResult struct {
+	GUID          string `json:"guid"`
+	Name          string `json:"name"`
+	IMDBID        string `json:"imdbId"`
+	TrimID        string `json:"trim_id"`
+	IsOfficial    bool   `json:"is_official"`
+	OriginalName  string `json:"original_name"`
+	Profile       string `json:"profile"`
+	IsFavorite    int    `json:"is_favorite"`
+}
+
 // TmdbID 从 trim_id 提取 tmdb id
 // 飞牛给 tmdbid 加了前缀用以区分 tv 或 movie：tt* 或 tm*
 func (i *Item) TmdbID() int {
@@ -174,4 +198,50 @@ func (i *Item) TmdbID() int {
 type ItemListResult struct {
 	List  []map[string]interface{} `json:"list"`
 	Total int                      `json:"total"`
+}
+
+// EditCredit 编辑信息中的演职员条目
+type EditCredit struct {
+	PersonGUID  string `json:"person_guid"`
+	Name        string `json:"name"`
+	Job         string `json:"job"`
+	Role        string `json:"role"`
+	Order       int    `json:"order"`
+	ProfilePath string `json:"profile_path"`
+}
+
+// EditDetail /item/getEditDetail 返回的媒体编辑信息
+type EditDetail struct {
+	ItemGUID                  string        `json:"item_guid"`
+	TrimID                    string        `json:"trim_id"`
+	IsOfficial                bool          `json:"is_official"`
+	Title                     string        `json:"title"`
+	TitleLocked               bool          `json:"title_locked"`
+	Overview                  string        `json:"overview"`
+	OverviewLocked            bool          `json:"overview_locked"`
+	Rating                    float64       `json:"rating"`
+	RatingLocked              bool          `json:"rating_locked"`
+	AirDate                   string        `json:"air_date"`
+	AirDateLocked             bool          `json:"air_date_locked"`
+	FirstAirDate              interface{}   `json:"first_air_date"`
+	FirstAirDateLocked        bool          `json:"first_air_date_locked"`
+	LastAirDate               interface{}   `json:"last_air_date"`
+	LastAirDateLocked         bool          `json:"last_air_date_locked"`
+	ContentRating             string        `json:"content_rating"`
+	ContentRatingLocked       bool          `json:"content_rating_locked"`
+	Backdrops                 string        `json:"backdrops"`
+	BackdropsLocked           bool          `json:"backdrops_locked"`
+	Logos                     string        `json:"logos"`
+	LogosLocked               bool          `json:"logos_locked"`
+	Posters                   string        `json:"posters"`
+	PostersLocked             bool          `json:"posters_locked"`
+	PosterType                int           `json:"poster_type"`
+	GenresLocked              bool          `json:"genres_locked"`
+	Genres                    []int         `json:"genres"`
+	ProductionCountries       []string      `json:"production_countries"`
+	ProductionCountriesLocked bool          `json:"production_countries_locked"`
+	Credits                   []EditCredit  `json:"credits"`
+	CreditsLocked             bool          `json:"credits_locked"`
+	JobTypesOpts              []string      `json:"job_types_opts"`
+	ContentRatingOpts         []string      `json:"content_rating_opts"`
 }

@@ -4,9 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"gorm.io/gorm"
 
 	"fntube/internal/handler"
@@ -15,6 +17,19 @@ import (
 
 // Register 注册所有路由
 func Register(h *server.Hertz, db *gorm.DB, trimSvc *trimmedia.Service) {
+	// 请求日志中间件
+	h.Use(func(ctx context.Context, c *app.RequestContext) {
+		start := time.Now()
+		path := string(c.URI().Path())
+		method := string(c.Method())
+
+		c.Next(ctx)
+
+		latency := time.Since(start)
+		status := c.Response.StatusCode()
+		hlog.CtxInfof(ctx, "[%s] %s %d %s", method, path, status, latency)
+	})
+
 	// 健康检查
 	h.GET("/api/health", func(ctx context.Context, c *app.RequestContext) {
 		c.JSON(200, map[string]string{"status": "ok"})

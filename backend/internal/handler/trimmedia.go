@@ -4,6 +4,9 @@ import (
 	"context"
 	"crypto/md5"
 	"fmt"
+	"io"
+	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -11,6 +14,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"gorm.io/gorm"
 
+	"fntube/internal/metatube"
 	"fntube/internal/trimmedia"
 )
 
@@ -38,10 +42,18 @@ func RegisterTrimMediaHandlers(h *server.Hertz, db *gorm.DB, service *trimmedia.
 	g.GET("/seasons/:tvId", hd.getSeasons)
 	g.GET("/episodes/:seasonId", hd.getEpisodes)
 	g.GET("/persons/:itemId", hd.getPersons)
+	g.POST("/persons/search", hd.searchPersons)
+	g.POST("/persons/import", hd.importPerson)
+	g.POST("/image/download-upload", hd.downloadAndUploadImage)
+	g.GET("/edit/:itemId", hd.getEditDetail)
+	g.POST("/edit/:itemId", hd.saveEditDetail)
 	g.GET("/playurl/:itemId", hd.getPlayURL)
 	g.GET("/resume", hd.getResume)
 	g.GET("/latest", hd.getLatest)
 	g.GET("/statistics", hd.getStatistics)
+	g.GET("/genres", hd.getGenres)
+	g.POST("/genres/batch", hd.batchCreateGenres)
+	g.GET("/countries", hd.getCountries)
 	g.POST("/refresh", hd.refresh)
 	g.GET("/search", hd.search)
 	g.GET("/img", hd.proxyImage)
@@ -253,6 +265,180 @@ func (h *TrimMediaHandler) getPersons(ctx context.Context, c *app.RequestContext
 	c.JSON(200, persons)
 }
 
+// searchPersons 搜索演员
+func (h *TrimMediaHandler) searchPersons(ctx context.Context, c *app.RequestContext) {
+	if h.service == nil || !h.service.IsAuthenticated() {
+		c.JSON(401, map[string]string{"error": "not authenticated"})
+		return
+	}
+	var req struct {
+		Keyword  string `json:"keyword"`
+		Page     int    `json:"page"`
+		PageSize int    `json:"page_size"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(400, map[string]string{"error": err.Error()})
+		return
+	}
+	if req.Keyword == "" {
+		c.JSON(400, map[string]string{"error": "keyword 不能为空"})
+		return
+	}
+	results, err := h.service.SearchPersons(req.Keyword, req.Page, req.PageSize)
+	if err != nil {
+		c.JSON(500, map[string]string{"error": err.Error()})
+		return
+	}
+	c.JSON(200, results)
+}
+
+// importPerson 从 MetaTube 搜索演员，下载图片并上传飞牛后创建演员
+// 完整流程：MetaTube搜索演员 → 下载图片 → 飞牛上传图片 → 飞牛创建演员
+func (h *TrimMediaHandler) importPerson(ctx context.Context, c *app.RequestContext) {
+	if h.service == nil || !h.service.IsAuthenticated() {
+		c.JSON(401, map[string]string{"error": "not authenticated"})
+		return
+	}
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(400, map[string]string{"error": err.Error()})
+		return
+	}
+	if req.Name == "" {
+		c.JSON(400, map[string]string{"error": "name 不能为空"})
+		return
+	}
+
+	// 1. 从数据库读取 MetaTube 配置
+	var cfg struct {
+		Host  string
+		Token string
+	}
+	if err := h.db.Table("meta_tube_configs").Order("id desc").First(&cfg).Error; err != nil {
+		c.JSON(400, map[string]string{"error": "未配置 MetaTube"})
+		return
+	}
+	if cfg.Host == "" {
+		c.JSON(400, map[string]string{"error": "MetaTube 服务地址为空"})
+		return
+	}
+
+	// 2. 通过 MetaTube 搜索演员
+	mtClient := metatube.NewClient(cfg.Host, cfg.Token)
+	defer mtClient.Close()
+
+	actors, err := mtClient.SearchActors(req.Name)
+	if err != nil {
+		c.JSON(500, map[string]string{"error": "MetaTube 搜索演员失败: " + err.Error()})
+		return
+	}
+	if len(actors) == 0 {
+		c.JSON(404, map[string]string{"error": "MetaTube 未找到该演员"})
+		return
+	}
+
+	// 取第一个搜索结果
+	actor := actors[0]
+	// 选取第一张图片作为头像
+	var imageURL string
+	if len(actor.Images) > 0 {
+		imageURL = actor.Images[0]
+	}
+
+	var profilePath string
+
+	// 3. 如果有图片，下载并上传到飞牛
+	if imageURL != "" {
+		// 下载图片
+		imgResp, err := http.Get(imageURL)
+		if err != nil {
+			c.JSON(500, map[string]string{"error": "下载演员图片失败: " + err.Error()})
+			return
+		}
+		defer imgResp.Body.Close()
+
+		if imgResp.StatusCode != http.StatusOK {
+			c.JSON(500, map[string]string{"error": fmt.Sprintf("下载图片状态码: %d", imgResp.StatusCode)})
+			return
+		}
+
+		imgData, err := io.ReadAll(imgResp.Body)
+		if err != nil {
+			c.JSON(500, map[string]string{"error": "读取图片数据失败: " + err.Error()})
+			return
+		}
+
+		// 从 URL 推断文件名和扩展名
+		filename := "actor_profile.jpg"
+		if idx := strings.LastIndex(imageURL, "/"); idx >= 0 {
+			filename = imageURL[idx+1:]
+			if filename == "" || !strings.Contains(filename, ".") {
+				filename = "actor_profile.jpg"
+			}
+		}
+
+		// 上传图片到飞牛
+		profilePath, err = h.service.UploadImage(imgData, filename, "poster")
+		if err != nil {
+			c.JSON(500, map[string]string{"error": "上传图片到飞牛失败: " + err.Error()})
+			return
+		}
+	}
+
+	// 4. 在飞牛创建演员
+	guid, err := h.service.CreatePerson(req.Name, profilePath)
+	if err != nil {
+		c.JSON(500, map[string]string{"error": "创建演员失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(200, map[string]interface{}{
+		"guid":         guid,
+		"name":         req.Name,
+		"profile_path": profilePath,
+	})
+}
+
+// getEditDetail 获取媒体项编辑信息
+func (h *TrimMediaHandler) getEditDetail(ctx context.Context, c *app.RequestContext) {
+	if h.service == nil || !h.service.IsAuthenticated() {
+		c.JSON(401, map[string]string{"error": "not authenticated"})
+		return
+	}
+	itemID := string(c.Param("itemId"))
+	detail, err := h.service.GetEditDetail(itemID)
+	if err != nil {
+		c.JSON(500, map[string]string{"error": err.Error()})
+		return
+	}
+	c.JSON(200, detail)
+}
+
+// saveEditDetail 保存媒体项编辑信息
+func (h *TrimMediaHandler) saveEditDetail(ctx context.Context, c *app.RequestContext) {
+	if h.service == nil || !h.service.IsAuthenticated() {
+		c.JSON(401, map[string]string{"error": "not authenticated"})
+		return
+	}
+	var detail trimmedia.EditDetail
+	if err := c.BindJSON(&detail); err != nil {
+		c.JSON(400, map[string]string{"error": err.Error()})
+		return
+	}
+	// 路径参数中的 itemId 为权威值，覆盖 body 内的 item_guid
+	if itemID := string(c.Param("itemId")); itemID != "" {
+		detail.ItemGUID = itemID
+	}
+	ok, err := h.service.SaveEditDetail(&detail)
+	if err != nil {
+		c.JSON(500, map[string]string{"error": err.Error()})
+		return
+	}
+	c.JSON(200, map[string]bool{"success": ok})
+}
+
 // getPlayURL 获取播放链接
 func (h *TrimMediaHandler) getPlayURL(ctx context.Context, c *app.RequestContext) {
 	if h.service == nil || !h.service.IsAuthenticated() {
@@ -320,6 +506,61 @@ func (h *TrimMediaHandler) getStatistics(ctx context.Context, c *app.RequestCont
 		return
 	}
 	c.JSON(200, stat)
+}
+
+// getGenres 媒体类型列表
+func (h *TrimMediaHandler) getGenres(ctx context.Context, c *app.RequestContext) {
+	if h.service == nil || !h.service.IsAuthenticated() {
+		c.JSON(401, map[string]string{"error": "not authenticated"})
+		return
+	}
+	lan := string(c.Query("lan"))
+	genres, err := h.service.GetGenreList(lan)
+	if err != nil {
+		c.JSON(500, map[string]string{"error": err.Error()})
+		return
+	}
+	c.JSON(200, genres)
+}
+
+// getCountries 国家地区列表
+func (h *TrimMediaHandler) getCountries(ctx context.Context, c *app.RequestContext) {
+	if h.service == nil || !h.service.IsAuthenticated() {
+		c.JSON(401, map[string]string{"error": "not authenticated"})
+		return
+	}
+	lan := string(c.Query("lan"))
+	countries, err := h.service.GetCountryList(lan)
+	if err != nil {
+		c.JSON(500, map[string]string{"error": err.Error()})
+		return
+	}
+	c.JSON(200, countries)
+}
+
+// batchCreateGenres 批量新增自定义分类
+func (h *TrimMediaHandler) batchCreateGenres(ctx context.Context, c *app.RequestContext) {
+	if h.service == nil || !h.service.IsAuthenticated() {
+		c.JSON(401, map[string]string{"error": "not authenticated"})
+		return
+	}
+	var req struct {
+		Values []string `json:"values"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(400, map[string]string{"error": err.Error()})
+		return
+	}
+	if len(req.Values) == 0 {
+		c.JSON(400, map[string]string{"error": "values 不能为空"})
+		return
+	}
+	genres, err := h.service.BatchCreateGenres(req.Values)
+	if err != nil {
+		c.JSON(500, map[string]string{"error": err.Error()})
+		return
+	}
+	c.JSON(200, genres)
 }
 
 // refresh 刷新媒体库

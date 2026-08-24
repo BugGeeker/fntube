@@ -23,7 +23,7 @@ func NewClient(host, token string) *Client {
 	return &Client{
 		host:       strings.TrimRight(strings.TrimSpace(host), "/"),
 		token:      token,
-		httpClient: &http.Client{Timeout: 15 * time.Second},
+		httpClient: &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
@@ -137,6 +137,88 @@ type searchResp struct {
 	} `json:"error"`
 }
 
+// MovieInfo 影片详情
+// 依据 metatube-sdk-go model/movie.go MovieInfo 结构
+type MovieInfo struct {
+	ID                  string   `json:"id"`
+	Number              string   `json:"number"`
+	Title               string   `json:"title"`
+	Summary             string   `json:"summary"`
+	Provider            string   `json:"provider"`
+	Homepage            string   `json:"homepage"`
+	Director            string   `json:"director"`
+	Actors              []string `json:"actors"`
+	ThumbURL            string   `json:"thumb_url"`
+	BigThumbURL         string   `json:"big_thumb_url"`
+	CoverURL            string   `json:"cover_url"`
+	BigCoverURL         string   `json:"big_cover_url"`
+	PreviewVideoURL     string   `json:"preview_video_url"`
+	PreviewVideoHLSURL  string   `json:"preview_video_hls_url"`
+	PreviewImages       []string `json:"preview_images"`
+	Maker               string   `json:"maker"`
+	Label               string   `json:"label"`
+	Series              string   `json:"series"`
+	Genres              []string `json:"genres"`
+	Score               float64  `json:"score"`
+	Runtime             int      `json:"runtime"`
+	ReleaseDate         string   `json:"release_date"`
+}
+
+// movieInfoResp GET /v1/movies/{provider}/{id} 响应结构
+type movieInfoResp struct {
+	Data  *MovieInfo `json:"data"`
+	Error *struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// GetMovieInfo 获取影片详情（GET /v1/movies/{provider}/{id}）
+func (c *Client) GetMovieInfo(provider, id string) (*MovieInfo, error) {
+	if c.host == "" {
+		return nil, fmt.Errorf("服务地址为空")
+	}
+
+	u := c.host + "/v1/movies/" + url.PathEscape(provider) + "/" + url.PathEscape(id)
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("构造请求失败: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("无法连接 MetaTube 服务 %s: %w", c.host, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("读取响应失败: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("响应状态码 %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var mr movieInfoResp
+	if err := json.Unmarshal(body, &mr); err != nil {
+		return nil, fmt.Errorf("解析响应失败: %w", err)
+	}
+	if mr.Error != nil {
+		msg := mr.Error.Message
+		if msg == "" {
+			msg = http.StatusText(mr.Error.Code)
+		}
+		return nil, fmt.Errorf("服务端返回错误: %s", msg)
+	}
+
+	return mr.Data, nil
+}
+
 // SearchMovies 搜索影片（GET /v1/movies/search?q=<keyword>）
 func (c *Client) SearchMovies(keyword string) ([]MovieSearchResult, error) {
 	if c.host == "" {
@@ -181,4 +263,69 @@ func (c *Client) SearchMovies(keyword string) ([]MovieSearchResult, error) {
 	}
 
 	return sr.Data, nil
+}
+
+// ActorSearchResult MetaTube 演员搜索结果
+type ActorSearchResult struct {
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Provider string   `json:"provider"`
+	Homepage string   `json:"homepage"`
+	Aliases  []string `json:"aliases,omitempty"`
+	Images   []string `json:"images"`
+}
+
+// actorSearchResp GET /v1/actors/search 响应结构
+type actorSearchResp struct {
+	Data  []ActorSearchResult `json:"data"`
+	Error *struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// SearchActors 搜索演员（GET /v1/actors/search?q=<keyword>）
+func (c *Client) SearchActors(keyword string) ([]ActorSearchResult, error) {
+	if c.host == "" {
+		return nil, fmt.Errorf("服务地址为空")
+	}
+
+	u := c.host + "/v1/actors/search?q=" + url.QueryEscape(keyword)
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("构造请求失败: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("无法连接 MetaTube 服务 %s: %w", c.host, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("读取响应失败: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("响应状态码 %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var ar actorSearchResp
+	if err := json.Unmarshal(body, &ar); err != nil {
+		return nil, fmt.Errorf("解析响应失败: %w", err)
+	}
+	if ar.Error != nil {
+		msg := ar.Error.Message
+		if msg == "" {
+			msg = http.StatusText(ar.Error.Code)
+		}
+		return nil, fmt.Errorf("服务端返回错误: %s", msg)
+	}
+
+	return ar.Data, nil
 }

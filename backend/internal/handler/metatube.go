@@ -28,6 +28,7 @@ func RegisterMetaTubeHandlers(h *server.Hertz, db *gorm.DB) {
 	g.POST("/config", hd.saveConfig)
 	g.POST("/test", hd.testConnection)
 	g.GET("/search", hd.searchMovies)
+	g.GET("/movie/:provider/:id", hd.getMovieInfo)
 }
 
 // metaTubeConfigView 配置视图，避免暴露 Token 详情
@@ -179,5 +180,40 @@ func (h *MetaTubeHandler) searchMovies(ctx context.Context, c *app.RequestContex
 
 	c.JSON(200, map[string]interface{}{
 		"data": results,
+	})
+}
+
+// getMovieInfo 获取影片详情
+// 从数据库读取 MetaTube 配置，调用 MetaTube 服务端 GET /v1/movies/{provider}/{id}
+func (h *MetaTubeHandler) getMovieInfo(ctx context.Context, c *app.RequestContext) {
+	provider := string(c.Param("provider"))
+	id := string(c.Param("id"))
+	if provider == "" || id == "" {
+		c.JSON(400, map[string]string{"error": "provider 和 id 不能为空"})
+		return
+	}
+
+	// 从数据库读取配置
+	var cfg metaTubeConfigView
+	if err := h.db.Table("meta_tube_configs").Order("id desc").First(&cfg).Error; err != nil {
+		c.JSON(400, map[string]string{"error": "未配置 MetaTube，请先保存配置"})
+		return
+	}
+	if cfg.Host == "" {
+		c.JSON(400, map[string]string{"error": "MetaTube 服务地址为空，请先配置"})
+		return
+	}
+
+	client := metatube.NewClient(cfg.Host, cfg.Token)
+	defer client.Close()
+
+	info, err := client.GetMovieInfo(provider, id)
+	if err != nil {
+		c.JSON(400, map[string]string{"error": "获取影片详情失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(200, map[string]interface{}{
+		"data": info,
 	})
 }

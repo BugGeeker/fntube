@@ -126,6 +126,64 @@ export interface Person {
   gender: number
 }
 
+// 编辑信息中的演职员条目
+export interface EditCredit {
+  person_guid: string
+  name: string
+  job: string
+  role: string
+  order: number
+  profile_path: string
+}
+
+// 演员搜索结果
+export interface PersonSearchResult {
+  guid: string
+  name: string
+  imdbId: string
+  trim_id: string
+  is_official: boolean
+  original_name: string
+  profile: string
+  is_favorite: number
+}
+
+// 编辑信息
+export interface EditDetail {
+  item_guid: string
+  trim_id: string
+  is_official: boolean
+  title: string
+  title_locked: boolean
+  overview: string
+  overview_locked: boolean
+  rating: number
+  rating_locked: boolean
+  air_date: string
+  air_date_locked: boolean
+  first_air_date: string | null
+  first_air_date_locked: boolean
+  last_air_date: string | null
+  last_air_date_locked: boolean
+  content_rating: string
+  content_rating_locked: boolean
+  backdrops: string
+  backdrops_locked: boolean
+  logos: string
+  logos_locked: boolean
+  posters: string
+  posters_locked: boolean
+  poster_type: number
+  genres_locked: boolean
+  genres: (number | string)[]
+  production_countries: string[]
+  production_countries_locked: boolean
+  credits: EditCredit[]
+  credits_locked: boolean
+  job_types_opts: string[]
+  content_rating_opts: string[]
+}
+
 // --- 配置 ---
 
 export const getConfig = () => request.get<TrimMediaConfig>('/trimmedia/config')
@@ -159,6 +217,52 @@ export const getEpisodes = (seasonId: string) =>
 
 export const getPersons = (itemId: string) =>
   request.get<Person[]>(`/trimmedia/persons/${itemId}`)
+
+// 搜索演员
+export const searchPersons = (keyword: string, page = 1, pageSize = 200) =>
+  request.post<PersonSearchResult[]>('/trimmedia/persons/search', { keyword, page, page_size: pageSize })
+
+// 导入演员（通过 MetaTube 搜索 → 下载图片 → 上传 → 创建）
+export interface ImportPersonResult {
+  guid: string
+  name: string
+  profile_path: string
+}
+
+export const importPerson = (name: string) =>
+  request.post<ImportPersonResult>('/trimmedia/persons/import', { name })
+
+// --- 类型 ---
+
+export interface Genre {
+  id: number
+  value: string
+}
+
+export const getGenres = (lan = 'zh-CN') =>
+  request.get<Genre[]>('/trimmedia/genres', { params: { lan } })
+
+// 批量新增自定义分类
+export const batchCreateGenres = (values: string[]) =>
+  request.post<Genre[]>('/trimmedia/genres/batch', { values })
+
+// --- 国家地区 ---
+
+export interface Country {
+  key: string
+  value: string
+}
+
+export const getCountries = (lan = 'zh-CN') =>
+  request.get<Country[]>('/trimmedia/countries', { params: { lan } })
+
+// --- 编辑信息 ---
+
+export const getEditDetail = (itemId: string) =>
+  request.get<EditDetail>(`/trimmedia/edit/${itemId}`)
+
+export const saveEditDetail = (itemId: string, data: EditDetail) =>
+  request.post<{ success: boolean }>(`/trimmedia/edit/${itemId}`, data)
 
 // --- 播放 ---
 

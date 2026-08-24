@@ -11,6 +11,13 @@
             style="width: 300px"
             @search="handleSearch"
           />
+          <a-tooltip :title="uiStore.hideImages ? '当前已隐藏图片，点击显示图片' : '点击隐藏所有图片'">
+            <a-switch
+              v-model:checked="hideImagesChecked"
+              checked-children="隐图"
+              un-checked-children="显图"
+            />
+          </a-tooltip>
           <a-button @click="handleRefresh">刷新媒体库</a-button>
         </a-space>
       </template>
@@ -24,7 +31,7 @@
             <a-card hoverable size="small" @click="enterLibrary(lib)">
               <template #cover>
                 <img
-                  v-if="lib.image_list && lib.image_list.length"
+                  v-if="!uiStore.hideImages && lib.image_list && lib.image_list.length"
                   :src="proxyImage(lib.image_list[0])"
                   style="height: 160px; object-fit: cover"
                   alt="poster"
@@ -65,15 +72,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useTrimMediaStore } from '@/stores/trimmedia'
+import { useUiStore } from '@/stores/ui'
 import { proxyImage } from '@/utils/image'
 import type { Library, MediaServerItem } from '@/api/trimmedia'
 
 const router = useRouter()
 const store = useTrimMediaStore()
+const uiStore = useUiStore()
+
+// 双向绑定到全局 store 的 hideImages，全局生效
+const hideImagesChecked = computed({
+  get: () => uiStore.hideImages,
+  set: (val: boolean) => uiStore.setHideImages(val),
+})
 
 const searchVisible = ref(false)
 const searchKeyword = ref('')

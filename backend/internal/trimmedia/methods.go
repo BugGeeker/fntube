@@ -1,8 +1,13 @@
 package trimmedia
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"path/filepath"
 )
 
 // MediaDbList 媒体库列表(普通用户)
@@ -326,7 +331,152 @@ func (c *Client) buildPerson(info map[string]interface{}) (Person, error) {
 	return p, nil
 }
 
-// PlayList 继续观看列表
+// PersonSearch 搜索演员，返回 data.list
+func (c *Client) PersonSearch(keyword string, page, pageSize int) ([]PersonSearchResult, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 200
+	}
+	res, err := c.request("/person/search", "POST", nil, map[string]interface{}{
+		"keyword":   keyword,
+		"page":      page,
+		"page_size": pageSize,
+	}, "", false)
+	if err != nil || !res.Success() {
+		return nil, fmt.Errorf("person search failed: %v", err)
+	}
+	if res.Data == nil {
+		return []PersonSearchResult{}, nil
+	}
+	m := res.DataMap()
+	if m == nil {
+		return []PersonSearchResult{}, nil
+	}
+	listRaw, ok := m["list"]
+	if !ok {
+		return []PersonSearchResult{}, nil
+	}
+	arr, err := asInterfaceList(listRaw)
+	if err != nil {
+		return []PersonSearchResult{}, nil
+	}
+	results := make([]PersonSearchResult, 0, len(arr))
+	for _, info := range arr {
+		r := PersonSearchResult{
+			GUID:         getString(info, "guid"),
+			Name:         getString(info, "name"),
+			IMDBID:       getString(info, "imdbId"),
+			TrimID:       getString(info, "trim_id"),
+			IsOfficial:   getBool(info, "is_official"),
+			OriginalName: getString(info, "original_name"),
+			Profile:      c.buildImgAPIURL(getString(info, "profile")),
+			IsFavorite:   getInt(info, "is_favorite"),
+		}
+		results = append(results, r)
+	}
+	return results, nil
+}
+
+// UploadImage 上传图片到飞牛临时存储
+// imageData: 图片二进制数据
+// filename: 文件名（含扩展名）
+// imageType: 图片类型，如 "poster"
+// 返回飞牛返回的 hash_path
+func (c *Client) UploadImage(imageData []byte, filename, imageType string) (string, error) {
+	if c.host == "" {
+		return "", fmt.Errorf("host is empty")
+	}
+
+	apiPathStr := apiPath + "/image/temp/upload"
+	reqURL := c.host + apiPathStr
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// image_type 字段
+	if err := writer.WriteField("image_type", imageType); err != nil {
+		return "", fmt.Errorf("write image_type field: %w", err)
+	}
+
+	// file 字段
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		return "", fmt.Errorf("create form file: %w", err)
+	}
+	if _, err := part.Write(imageData); err != nil {
+		return "", fmt.Errorf("write file data: %w", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		return "", fmt.Errorf("close multipart writer: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", reqURL, body)
+	if err != nil {
+		return "", fmt.Errorf("new request: %w", err)
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Referer", c.host)
+	req.Header.Set("Authorization", c.token)
+	// multipart body 签名内容使用空字符串
+	req.Header.Set("authx", c.getAuthx(apiPathStr, ""))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request error: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read body: %w", err)
+	}
+
+	var result RequestResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("unmarshal response: %w, body: %s", err, string(respBody))
+	}
+	if !result.Success() {
+		return "", fmt.Errorf("upload image failed: code=%d msg=%s", result.Code, result.Msg)
+	}
+
+	m := result.DataMap()
+	if m == nil {
+		return "", fmt.Errorf("upload image: empty data")
+	}
+	hashPath, ok := m["hash_path"].(string)
+	if !ok || hashPath == "" {
+		return "", fmt.Errorf("upload image: missing hash_path")
+	}
+	return hashPath, nil
+}
+
+// CreatePerson 在飞牛创建演员
+// name: 演员名称
+// profilePath: 演员头像路径（由 UploadImage 返回的 hash_path）
+// 返回创建的演员 guid
+func (c *Client) CreatePerson(name, profilePath string) (string, error) {
+	res, err := c.request("/person/create", "POST", nil, map[string]interface{}{
+		"name":         name,
+		"profile_path": profilePath,
+	}, "", false)
+	if err != nil || !res.Success() {
+		return "", fmt.Errorf("create person failed: %v, msg: %s", err, res.Msg)
+	}
+	m := res.DataMap()
+	if m == nil {
+		return "", fmt.Errorf("create person: empty data")
+	}
+	guid, ok := m["guid"].(string)
+	if !ok || guid == "" {
+		return "", fmt.Errorf("create person: missing guid")
+	}
+	return guid, nil
+}
 func (c *Client) PlayList() ([]Item, error) {
 	res, err := c.request("/play/list", "GET", nil, nil, "", false)
 	if err != nil || !res.Success() {
@@ -353,6 +503,121 @@ func (c *Client) TaskRunning() (bool, error) {
 		return false, fmt.Errorf("task running failed: %v", err)
 	}
 	return res.Data != nil, nil
+}
+
+// GenreList 查询媒体类型列表
+// lan: 语言，默认 zh-CN
+func (c *Client) GenreList(lan string) ([]Genre, error) {
+	if lan == "" {
+		lan = "zh-CN"
+	}
+	res, err := c.request("/tag/genres", "GET", map[string]string{"lan": lan}, nil, "", false)
+	if err != nil || !res.Success() {
+		return nil, fmt.Errorf("genre list failed: %v", err)
+	}
+	arr, err := asInterfaceList(res.Data)
+	if err != nil {
+		return []Genre{}, nil
+	}
+	genres := make([]Genre, 0, len(arr))
+	for _, info := range arr {
+		g := Genre{
+			ID:    getInt(info, "id"),
+			Value: getString(info, "value"),
+		}
+		genres = append(genres, g)
+	}
+	return genres, nil
+}
+
+// BatchCreateGenres 批量新增自定义分类
+// values: 分类名称列表
+func (c *Client) BatchCreateGenres(values []string) ([]Genre, error) {
+	if len(values) == 0 {
+		return []Genre{}, nil
+	}
+	reqBody := map[string]interface{}{"values": values}
+	res, err := c.request("/tag/custom/genres/batch", "POST", nil, reqBody, "", false)
+	if err != nil || !res.Success() {
+		return nil, fmt.Errorf("batch create genres failed: %v, msg: %s", err, res.Msg)
+	}
+	arr, err := asInterfaceList(res.Data)
+	if err != nil {
+		return []Genre{}, nil
+	}
+	genres := make([]Genre, 0, len(arr))
+	for _, info := range arr {
+		g := Genre{
+			ID:    getInt(info, "id"),
+			Value: getString(info, "value"),
+		}
+		genres = append(genres, g)
+	}
+	return genres, nil
+}
+
+// CountryList 查询国家地区列表
+// lan: 语言，默认 zh-CN
+func (c *Client) CountryList(lan string) ([]Country, error) {
+	if lan == "" {
+		lan = "zh-CN"
+	}
+	res, err := c.request("/tag/iso3166", "GET", map[string]string{"lan": lan}, nil, "", false)
+	if err != nil || !res.Success() {
+		return nil, fmt.Errorf("country list failed: %v", err)
+	}
+	arr, err := asInterfaceList(res.Data)
+	if err != nil {
+		return []Country{}, nil
+	}
+	countries := make([]Country, 0, len(arr))
+	for _, info := range arr {
+		c := Country{
+			Key:   getString(info, "key"),
+			Value: getString(info, "value"),
+		}
+		countries = append(countries, c)
+	}
+	return countries, nil
+}
+
+// EditDetail 获取媒体项编辑信息
+func (c *Client) EditDetail(guid string) (*EditDetail, error) {
+	res, err := c.request("/item/getEditDetail", "POST", nil, map[string]interface{}{
+		"item_guid": guid,
+	}, "", false)
+	if err != nil || !res.Success() {
+		return nil, fmt.Errorf("get edit detail failed: %v", err)
+	}
+	if res.Data == nil {
+		return nil, nil
+	}
+	detail := &EditDetail{}
+	b, _ := json.Marshal(res.DataMap())
+	if err := json.Unmarshal(b, detail); err != nil {
+		return nil, fmt.Errorf("unmarshal edit detail: %w", err)
+	}
+	return detail, nil
+}
+
+// SaveEditDetail 保存媒体项编辑信息
+func (c *Client) SaveEditDetail(detail *EditDetail) (bool, error) {
+	if detail == nil {
+		return false, fmt.Errorf("nil edit detail")
+	}
+	b, err := json.Marshal(detail)
+	if err != nil {
+		return false, fmt.Errorf("marshal edit detail: %w", err)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(b, &body); err != nil {
+		return false, fmt.Errorf("re-unmarshal edit detail: %w", err)
+	}
+	res, err := c.request("/item/saveEditDetail", "POST", nil, body, "", false)
+	if err != nil || !res.Success() {
+		return false, fmt.Errorf("save edit detail failed: %v", err)
+	}
+	return true, nil
 }
 
 // buildItem 从 map 构造 Item
@@ -397,6 +662,15 @@ func getInt(m map[string]interface{}, key string) int {
 		}
 	}
 	return 0
+}
+
+func getBool(m map[string]interface{}, key string) bool {
+	if v, ok := m[key]; ok {
+		if b, ok := v.(bool); ok {
+			return b
+		}
+	}
+	return false
 }
 
 func getStringList(m map[string]interface{}, key string) []string {

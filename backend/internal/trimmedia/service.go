@@ -281,6 +281,94 @@ func (s *Service) GetPersonList(itemID string) ([]Person, error) {
 	return s.client.PersonList(itemID)
 }
 
+// SearchPersons 搜索演员
+func (s *Service) SearchPersons(keyword string, page, pageSize int) ([]PersonSearchResult, error) {
+	if !s.IsAuthenticated() {
+		return nil, fmt.Errorf("not authenticated")
+	}
+	if s.client == nil {
+		return nil, fmt.Errorf("no client")
+	}
+	return s.client.PersonSearch(keyword, page, pageSize)
+}
+
+// UploadImage 上传图片到飞牛临时存储
+func (s *Service) UploadImage(imageData []byte, filename, imageType string) (string, error) {
+	if !s.IsAuthenticated() {
+		return "", fmt.Errorf("not authenticated")
+	}
+	if s.client == nil {
+		return "", fmt.Errorf("no client")
+	}
+	return s.client.UploadImage(imageData, filename, imageType)
+}
+
+// CreatePerson 在飞牛创建演员
+func (s *Service) CreatePerson(name, profilePath string) (string, error) {
+	if !s.IsAuthenticated() {
+		return "", fmt.Errorf("not authenticated")
+	}
+	if s.client == nil {
+		return "", fmt.Errorf("no client")
+	}
+	return s.client.CreatePerson(name, profilePath)
+}
+
+// GetGenreList 获取媒体类型列表
+func (s *Service) GetGenreList(lan string) ([]Genre, error) {
+	if !s.IsAuthenticated() {
+		return nil, fmt.Errorf("not authenticated")
+	}
+	if s.client == nil {
+		return nil, fmt.Errorf("no client")
+	}
+	return s.client.GenreList(lan)
+}
+
+// BatchCreateGenres 批量新增自定义分类
+func (s *Service) BatchCreateGenres(values []string) ([]Genre, error) {
+	if !s.IsAuthenticated() {
+		return nil, fmt.Errorf("not authenticated")
+	}
+	if s.client == nil {
+		return nil, fmt.Errorf("no client")
+	}
+	return s.client.BatchCreateGenres(values)
+}
+
+// GetCountryList 获取国家地区列表
+func (s *Service) GetCountryList(lan string) ([]Country, error) {
+	if !s.IsAuthenticated() {
+		return nil, fmt.Errorf("not authenticated")
+	}
+	if s.client == nil {
+		return nil, fmt.Errorf("no client")
+	}
+	return s.client.CountryList(lan)
+}
+
+// GetEditDetail 获取媒体项编辑信息
+func (s *Service) GetEditDetail(itemID string) (*EditDetail, error) {
+	if !s.IsAuthenticated() {
+		return nil, fmt.Errorf("not authenticated")
+	}
+	if s.client == nil {
+		return nil, fmt.Errorf("no client")
+	}
+	return s.client.EditDetail(itemID)
+}
+
+// SaveEditDetail 保存媒体项编辑信息
+func (s *Service) SaveEditDetail(detail *EditDetail) (bool, error) {
+	if !s.IsAuthenticated() {
+		return false, fmt.Errorf("not authenticated")
+	}
+	if s.client == nil {
+		return false, fmt.Errorf("no client")
+	}
+	return s.client.SaveEditDetail(detail)
+}
+
 // GetTVEpisodes 根据剧 ID 获取季和集列表
 // season 指定时只返回该季
 func (s *Service) GetTVEpisodes(itemID, title, year string, season *int) (string, map[int][]int, error) {
