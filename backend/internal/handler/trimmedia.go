@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -189,12 +188,15 @@ func (h *TrimMediaHandler) getItems(ctx context.Context, c *app.RequestContext) 
 	if limit <= 0 {
 		limit = 20
 	}
-	items, err := h.service.GetItems(libID, start, limit)
+	items, total, err := h.service.GetItems(libID, start, limit)
 	if err != nil {
 		c.JSON(500, map[string]string{"error": err.Error()})
 		return
 	}
-	c.JSON(200, items)
+	c.JSON(200, map[string]interface{}{
+		"total": total,
+		"items": items,
+	})
 }
 
 // getItem 媒体详情
@@ -399,6 +401,72 @@ func (h *TrimMediaHandler) importPerson(ctx context.Context, c *app.RequestConte
 		"name":         req.Name,
 		"profile_path": profilePath,
 	})
+}
+
+// downloadAndUploadImage 下载 http 网络图片并上传到飞牛，返回飞牛图片路径
+// body: { url, type }  type 为图片类型（如 poster、backdrop），默认 poster
+func (h *TrimMediaHandler) downloadAndUploadImage(ctx context.Context, c *app.RequestContext) {
+	if h.service == nil || !h.service.IsAuthenticated() {
+		c.JSON(401, map[string]string{"error": "not authenticated"})
+		return
+	}
+	var req struct {
+		URL  string `json:"url"`
+		Type string `json:"type"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(400, map[string]string{"error": err.Error()})
+		return
+	}
+	if req.URL == "" {
+		c.JSON(400, map[string]string{"error": "url 不能为空"})
+		return
+	}
+	// 仅允许 http/https 网络图片，防止传入本地路径
+	if !strings.HasPrefix(req.URL, "http://") && !strings.HasPrefix(req.URL, "https://") {
+		c.JSON(400, map[string]string{"error": "仅支持 http/https 网络图片"})
+		return
+	}
+	if req.Type == "" {
+		req.Type = "poster"
+	}
+
+	// 下载图片
+	imgResp, err := http.Get(req.URL)
+	if err != nil {
+		c.JSON(500, map[string]string{"error": "下载图片失败: " + err.Error()})
+		return
+	}
+	defer imgResp.Body.Close()
+	if imgResp.StatusCode != http.StatusOK {
+		c.JSON(500, map[string]string{"error": fmt.Sprintf("下载图片状态码: %d", imgResp.StatusCode)})
+		return
+	}
+	imgData, err := io.ReadAll(imgResp.Body)
+	if err != nil {
+		c.JSON(500, map[string]string{"error": "读取图片数据失败: " + err.Error()})
+		return
+	}
+
+	// 从 URL 推断文件名与扩展名（去掉查询参数）
+	filename := "image.jpg"
+	if idx := strings.LastIndex(req.URL, "/"); idx >= 0 {
+		name := req.URL[idx+1:]
+		if qIdx := strings.Index(name, "?"); qIdx >= 0 {
+			name = name[:qIdx]
+		}
+		if name != "" && strings.Contains(name, ".") {
+			filename = name
+		}
+	}
+
+	// 上传到飞牛临时存储，返回飞牛图片路径
+	path, err := h.service.UploadImage(imgData, filename, req.Type)
+	if err != nil {
+		c.JSON(500, map[string]string{"error": "上传图片到飞牛失败: " + err.Error()})
+		return
+	}
+	c.JSON(200, map[string]string{"path": path})
 }
 
 // getEditDetail 获取媒体项编辑信息

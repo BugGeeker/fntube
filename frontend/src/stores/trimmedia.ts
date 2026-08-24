@@ -29,6 +29,7 @@ export const useTrimMediaStore = defineStore('trimmedia', () => {
   const config = ref<TrimMediaConfig | null>(null)
   const libraries = ref<Library[]>([])
   const items = ref<MediaServerItem[]>([])
+  const itemsTotal = ref(0)
   const currentItem = ref<MediaServerItem | null>(null)
   const seasons = ref<SeasonItem[]>([])
   const episodes = ref<SeasonItem[]>([])
@@ -77,7 +78,8 @@ export const useTrimMediaStore = defineStore('trimmedia', () => {
     loading.value = true
     try {
       const { data } = await getItems(libraryId, start, limit)
-      items.value = data || []
+      items.value = data?.items || []
+      itemsTotal.value = data?.total || 0
     } finally {
       loading.value = false
     }
@@ -142,6 +144,7 @@ export const useTrimMediaStore = defineStore('trimmedia', () => {
     config,
     libraries,
     items,
+    itemsTotal,
     currentItem,
     seasons,
     episodes,

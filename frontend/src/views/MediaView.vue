@@ -33,10 +33,11 @@
                 <img
                   v-if="!uiStore.hideImages && lib.image_list && lib.image_list.length"
                   :src="proxyImage(lib.image_list[0])"
-                  style="height: 160px; object-fit: cover"
+                  style="width: 100%; aspect-ratio: 2 / 3; object-fit: cover; display: block"
                   alt="poster"
                 />
-                <div v-else style="height: 160px; display: flex; align-items: center; justify-content: center; background: #f0f0f0">
+                <div v-else
+                  style="width: 100%; aspect-ratio: 2 / 3; display: flex; align-items: center; justify-content: center; background: #f0f0f0">
                   <span style="color: #999; font-size: 32px">{{ lib.name.charAt(0) }}</span>
                 </div>
               </template>

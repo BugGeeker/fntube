@@ -200,7 +200,7 @@ export const getLibraries = () => request.get<Library[]>('/trimmedia/libraries')
 // --- 媒体条目 ---
 
 export const getItems = (libraryId: string, start = 0, limit = 20) =>
-  request.get<MediaServerItem[]>(`/trimmedia/items/${libraryId}`, { params: { start, limit } })
+  request.get<{ total: number; items: MediaServerItem[] }>(`/trimmedia/items/${libraryId}`, { params: { start, limit } })
 
 export const getItem = (itemId: string) =>
   request.get<MediaServerItem>(`/trimmedia/item/${itemId}`)
@@ -231,6 +231,11 @@ export interface ImportPersonResult {
 
 export const importPerson = (name: string) =>
   request.post<ImportPersonResult>('/trimmedia/persons/import', { name })
+
+// 下载 http 网络图片并上传到飞牛，返回飞牛图片路径
+// type: 图片类型（如 poster、backdrop），默认 poster
+export const downloadAndUploadImage = (url: string, type = 'poster') =>
+  request.post<{ path: string }>('/trimmedia/image/download-upload', { url, type })
 
 // --- 类型 ---
 

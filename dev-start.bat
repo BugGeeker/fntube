@@ -4,10 +4,10 @@ echo ========================================
 echo   FnTube 本地调试环境
 echo ========================================
 echo.
-echo 启动后端 (Go, port 8080)...
+echo 启动后端 (Go, port 8090)...
 echo.
 
-set "FN_APP_PORT=8080"
+set "FN_APP_PORT=8090"
 set "TRIM_PKGVAR=%CD%\.dev\pkvar"
 set "TRIM_APPDEST=%CD%"
 

@@ -7,13 +7,13 @@
       </template>
       <a-spin :spinning="store.loading">
         <a-row :gutter="[16, 16]">
-          <a-col v-for="item in store.items" :key="item.guid" :xs="24" :sm="12" :md="8" :lg="6" :xl="4">
+          <a-col v-for="item in store.items" :key="item.guid" :xs="24" :sm="12" :md="8" :lg="8" :xl="6">
             <a-card hoverable size="small" @click="showDetail(item)" style="overflow: hidden">
               <template #cover>
                 <img v-if="!uiStore.hideImages && item.poster" :src="proxyImage(item.poster)"
-                  style="height: 200px; width: 100%; object-fit: cover" alt="poster" />
+                  style="width: 100%; aspect-ratio: 3 / 2; object-fit: cover;" alt="poster" />
                 <div v-else
-                  style="height: 200px; display: flex; align-items: center; justify-content: center; background: #f5f5f5">
+                  style="width: 100%; aspect-ratio: 3 / 2; display: flex; align-items: center; justify-content: center; background: #f5f5f5">
                   <span style="color: #999; font-size: 24px">{{ item.title?.charAt(0) || '?' }}</span>
                 </div>
               </template>
@@ -32,6 +32,18 @@
         </a-row>
         <a-empty v-if="!store.loading && store.items.length === 0" description="该媒体库暂无内容" />
       </a-spin>
+      <div v-if="!store.loading && store.itemsTotal > 0" style="display: flex; justify-content: center; margin-top: 16px">
+        <a-pagination
+          v-model:current="currentPage"
+          v-model:page-size="pageSize"
+          :total="store.itemsTotal"
+          :page-size-options="[10, 20, 50, 100]"
+          show-size-changer
+          :show-total="(total: number) => `共 ${total} 项`"
+          @change="handlePageChange"
+          @show-size-change="handlePageChange"
+        />
+      </div>
     </a-card>
 
     <!-- 媒体详情弹窗 -->
@@ -45,18 +57,18 @@
           <!-- 封面 -->
           <div style="flex: 1; min-width: 0;">
             <img :src="proxyImage(store.currentItem.poster)"
-              style="width: 100%; height: 200px; object-fit: contain; border-radius: 8px;" alt="poster" />
+              style="width: 100%; aspect-ratio: 3 / 2; object-fit: contain; border-radius: 8px;" alt="poster" />
           </div>
           <!-- 背景图 -->
           <div style="flex: 1; min-width: 0;">
             <img :src="proxyImage(store.currentItem.backdrop)"
-              style="width: 100%; height: 200px; object-fit: contain; border-radius: 8px;" alt="backdrop" />
+              style="width: 100%; aspect-ratio: 3 / 2; object-fit: contain; border-radius: 8px;" alt="backdrop" />
           </div>
 
           <!-- Logo -->
           <div style="flex: 1; min-width: 0;">
             <img :src="proxyImage(store.currentItem.logo)"
-              style="width: 100%; height: 200px; object-fit: contain; border-radius: 8px; background: #1a1a2e;"
+              style="width: 100%; aspect-ratio: 3 / 2; object-fit: contain; border-radius: 8px; background: #1a1a2e;"
               alt="logo" />
           </div>
         </div>
@@ -326,7 +338,7 @@ import { useMetaTubeStore } from '@/stores/metatube'
 import { useUiStore } from '@/stores/ui'
 import LockButton from '@/components/LockButton.vue'
 import { proxyImage } from '@/utils/image'
-import { getEditDetail, saveEditDetail, getGenres, getCountries, batchCreateGenres, searchPersons, importPerson, type EditDetail, type EditCredit, type Genre, type Country, type PersonSearchResult } from '@/api/trimmedia'
+import { getEditDetail, saveEditDetail, getGenres, getCountries, batchCreateGenres, searchPersons, importPerson, downloadAndUploadImage, type EditDetail, type EditCredit, type Genre, type Country } from '@/api/trimmedia'
 import { type MovieSearchResult } from '@/api/metatube'
 import type { MediaServerItem } from '@/api/trimmedia'
 
@@ -367,6 +379,24 @@ const libraryName = computed(() => {
   return lib?.name || libraryId.value
 })
 
+// 分页
+const currentPage = ref(1)
+const pageSize = ref(20)
+
+async function loadItems() {
+  try {
+    await store.fetchItems(libraryId.value, currentPage.value - 1, pageSize.value)
+  } catch {
+    message.error('获取媒体列表失败')
+  }
+}
+
+function handlePageChange(page: number, size: number) {
+  currentPage.value = page
+  if (size) pageSize.value = size
+  loadItems()
+}
+
 onMounted(async () => {
   // 如果 libraries 还没加载，先加载
   if (store.libraries.length === 0) {
@@ -374,10 +404,9 @@ onMounted(async () => {
       message.warning('未连接到飞牛影视，请先配置')
     })
   }
-  // 加载该媒体库的条目
-  await store.fetchItems(libraryId.value, 0, 50).catch(() => {
-    message.error('获取媒体列表失败')
-  })
+  // 加载该媒体库第一页条目
+  currentPage.value = 1
+  await loadItems()
 })
 
 function backToLibraries() {
@@ -515,6 +544,22 @@ async function handleSaveEdit() {
   if (!editForm.value || !store.currentItem) return
   editSaving.value = true
   try {
+    // 封面/背景图为 http 网络图片时，先下载并上传到飞牛，再使用飞牛返回的本地路径保存
+    const imageFields: Array<{ key: 'posters' | 'backdrops'; type: string }> = [
+      { key: 'posters', type: 'poster' },
+      { key: 'backdrops', type: 'backdrop' },
+    ]
+    for (const { key, type } of imageFields) {
+      const value = editForm.value[key]
+      if (typeof value === 'string' && (value.startsWith('http://') || value.startsWith('https://'))) {
+        try {
+          const { data } = await downloadAndUploadImage(value, type)
+          editForm.value[key] = data.path
+        } catch {
+          message.warning('网络图片上传飞牛失败，将保留原地址')
+        }
+      }
+    }
     const pendingGenres = editForm.value.genres.filter(g => typeof g === 'string')
     const genres = editForm.value.genres.filter(g => typeof g === 'number')
     // 如果有待创建的新分类，先调用批量创建接口获取 id

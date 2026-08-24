@@ -7,7 +7,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"path/filepath"
 )
 
 // MediaDbList 媒体库列表(普通用户)
@@ -108,7 +107,7 @@ func (c *Client) MediaDbSum() (*MediaDbSummary, error) {
 // page, pageSize: 分页
 // sortBy: 排序字段，默认 create_time
 // sort: 排序方向，默认 DESC
-func (c *Client) ItemList(guid string, types []Type, excludeGroupedVideo bool, page, pageSize int, sortBy, sort string) ([]Item, error) {
+func (c *Client) ItemList(guid string, types []Type, excludeGroupedVideo bool, page, pageSize int, sortBy, sort string) ([]Item, int, error) {
 	if types == nil {
 		types = []Type{TypeMovie, TypeTV, TypeDirectory, TypeVideo}
 	}
@@ -141,24 +140,26 @@ func (c *Client) ItemList(guid string, types []Type, excludeGroupedVideo bool, p
 	}
 	res, err := c.request("/item/list", "POST", nil, post, "", false)
 	if err != nil || !res.Success() {
-		return nil, fmt.Errorf("item list failed: %v", err)
+		return nil, 0, fmt.Errorf("item list failed: %v", err)
 	}
 	if res.Data == nil {
-		return []Item{}, nil
+		return []Item{}, 0, nil
 	}
-	listRaw, ok := res.DataMap()["list"]
+	dataMap := res.DataMap()
+	listRaw, ok := dataMap["list"]
 	if !ok {
-		return []Item{}, nil
+		return []Item{}, 0, nil
 	}
 	arr, err := asInterfaceList(listRaw)
 	if err != nil {
-		return []Item{}, nil
+		return []Item{}, 0, nil
 	}
 	items := make([]Item, 0, len(arr))
 	for _, info := range arr {
 		items = append(items, c.buildItem(info))
 	}
-	return items, nil
+	// total 为匹配条件下的总数（不受分页影响）
+	return items, getInt(dataMap, "total"), nil
 }
 
 // Item 媒体详情

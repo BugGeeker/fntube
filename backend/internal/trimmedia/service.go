@@ -230,23 +230,24 @@ func (s *Service) GetLibraries(hidden bool) ([]Library, error) {
 // parent: 媒体库ID
 // startIndex: 起始页（从1开始）
 // limit: 每页数量，-1 表示全部
-func (s *Service) GetItems(parent string, startIndex, limit int) ([]MediaServerItem, error) {
+// 返回媒体项列表及匹配条件下的总数 total
+func (s *Service) GetItems(parent string, startIndex, limit int) ([]MediaServerItem, int, error) {
 	if !s.IsAuthenticated() {
-		return nil, fmt.Errorf("not authenticated")
+		return nil, 0, fmt.Errorf("not authenticated")
 	}
 	pageSize := limit
 	if pageSize < 0 {
 		pageSize = -1
 	}
-	items, err := s.client.ItemList(parent, []Type{TypeMovie, TypeTV, TypeVideo, TypeDirectory}, true, startIndex+1, pageSize, "create_time", "DESC")
+	items, total, err := s.client.ItemList(parent, []Type{TypeMovie, TypeTV, TypeVideo, TypeDirectory}, true, startIndex+1, pageSize, "create_time", "DESC")
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	result := make([]MediaServerItem, 0, len(items))
 	for _, item := range items {
 		if item.Type == TypeDirectory {
 			// 递归展开目录
-			sub, err := s.GetItems(item.GUID, 0, limit)
+			sub, _, err := s.GetItems(item.GUID, 0, limit)
 			if err == nil {
 				result = append(result, sub...)
 			}
@@ -254,7 +255,7 @@ func (s *Service) GetItems(parent string, startIndex, limit int) ([]MediaServerI
 			result = append(result, s.buildMediaServerItem(item))
 		}
 	}
-	return result, nil
+	return result, total, nil
 }
 
 // GetItemInfo 获取单个项目详情
@@ -474,7 +475,7 @@ func (s *Service) GetLatest(num int) ([]PlayItem, error) {
 	if pageSize < 100 {
 		pageSize = 100
 	}
-	items, err := s.client.ItemList("", []Type{TypeMovie, TypeTV}, true, 1, pageSize, "create_time", "DESC")
+	items, _, err := s.client.ItemList("", []Type{TypeMovie, TypeTV}, true, 1, pageSize, "create_time", "DESC")
 	if err != nil {
 		return nil, err
 	}
