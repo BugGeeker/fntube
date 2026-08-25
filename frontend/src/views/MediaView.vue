@@ -79,7 +79,7 @@ import { message } from 'ant-design-vue'
 import { useTrimMediaStore } from '@/stores/trimmedia'
 import { useUiStore } from '@/stores/ui'
 import { proxyImage } from '@/utils/image'
-import type { Library, MediaServerItem } from '@/api/trimmedia'
+import type { Library, MediaItem } from '@/api/trimmedia'
 
 const router = useRouter()
 const store = useTrimMediaStore()
@@ -114,7 +114,7 @@ function enterLibrary(lib: Library) {
   router.push(`/media/${lib.id}`)
 }
 
-function formatYear(item: MediaServerItem): string {
+function formatYear(item: MediaItem): string {
   const date = item.release_date || item.air_date || ''
   return date.slice(0, 4)
 }

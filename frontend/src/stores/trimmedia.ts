@@ -18,26 +18,26 @@ import {
   searchMedia,
   type TrimMediaConfig,
   type Library,
-  type MediaServerItem,
+  type MediaItem,
   type PlayItem,
   type MediaStatistics,
-  type SeasonItem,
+  type Season,
   type Person,
 } from '@/api/trimmedia'
 
 export const useTrimMediaStore = defineStore('trimmedia', () => {
   const config = ref<TrimMediaConfig | null>(null)
   const libraries = ref<Library[]>([])
-  const items = ref<MediaServerItem[]>([])
+  const items = ref<MediaItem[]>([])
   const itemsTotal = ref(0)
-  const currentItem = ref<MediaServerItem | null>(null)
-  const seasons = ref<SeasonItem[]>([])
-  const episodes = ref<SeasonItem[]>([])
+  const currentItem = ref<MediaItem | null>(null)
+  const seasons = ref<Season[]>([])
+  const episodes = ref<Season[]>([])
   const persons = ref<Person[]>([])
   const resumeList = ref<PlayItem[]>([])
   const latestList = ref<PlayItem[]>([])
   const statistics = ref<MediaStatistics | null>(null)
-  const searchResults = ref<MediaServerItem[]>([])
+  const searchResults = ref<MediaItem[]>([])
   const loading = ref(false)
   const connected = ref(false)
 

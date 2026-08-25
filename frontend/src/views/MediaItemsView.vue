@@ -61,119 +61,12 @@
     </a-card>
 
     <!-- 媒体详情弹窗 -->
-    <a-modal v-model:open="detailVisible" width="1000px" :title="store.currentItem?.title || '详情'"
-      :body-style="{ maxHeight: '80vh', overflow: 'auto' }">
-      <template v-if="store.currentItem">
-        <!-- 顶部图片横向布局 -->
-        <div
-          v-if="!uiStore.hideImages && (store.currentItem.backdrop || store.currentItem.poster || store.currentItem.logo)"
-          style="display: flex; gap: 12px; margin-bottom: 16px;">
-          <!-- 封面 -->
-          <div style="flex: 1; min-width: 0;">
-            <img :src="proxyImage(store.currentItem.poster)"
-              style="width: 100%; aspect-ratio: 3 / 2; object-fit: contain; border-radius: 8px;" alt="poster" />
-          </div>
-          <!-- 背景图 -->
-          <div style="flex: 1; min-width: 0;">
-            <img :src="proxyImage(store.currentItem.backdrop)"
-              style="width: 100%; aspect-ratio: 3 / 2; object-fit: contain; border-radius: 8px;" alt="backdrop" />
-          </div>
-
-          <!-- Logo -->
-          <div style="flex: 1; min-width: 0;">
-            <img :src="proxyImage(store.currentItem.logo)"
-              style="width: 100%; aspect-ratio: 3 / 2; object-fit: contain; border-radius: 8px;" alt="logo" />
-          </div>
-        </div>
-
-        <div style="margin-bottom: 16px">
-          <p v-if="store.currentItem.original_title && store.currentItem.original_title !== store.currentItem.title"
-            style="color: #999">
-            {{ store.currentItem.original_title }}
-          </p>
-          <a-space>
-            <a-tag>{{ itemYear(store.currentItem) || '未知年份' }}</a-tag>
-            <a-tag v-if="store.currentItem.type === 'TV'" color="blue">剧集</a-tag>
-            <a-tag v-else-if="store.currentItem.type === 'Movie'" color="orange">电影</a-tag>
-          </a-space>
-        </div>
-
-        <!-- 简介 -->
-        <div v-if="store.currentItem.overview" style="margin-bottom: 16px">
-          <p style="color: #555; line-height: 1.6">{{ store.currentItem.overview }}</p>
-        </div>
-
-        <!-- 演员列表 -->
-        <div v-if="store.persons.length > 0" style="margin-bottom: 16px">
-          <h4>演员</h4>
-          <a-list size="small" bordered>
-            <a-list-item v-for="p in store.persons" :key="p.person_guid">
-              <a-list-item-meta>
-                <template #avatar>
-                  <a-avatar v-if="!uiStore.hideImages && p.profile_path" :src="proxyImage(p.profile_path)" :size="40" />
-                  <a-avatar v-else :size="40">{{ p.name?.charAt(0) || '?' }}</a-avatar>
-                </template>
-                <template #title>
-                  <span>{{ p.name }}</span>
-                  <a-tag v-if="p.job" color="blue" style="margin-left: 8px">{{ p.job }}</a-tag>
-                </template>
-                <template #description>
-                  <span v-if="p.role">饰 {{ p.role }}</span>
-                  <span v-else-if="p.job">{{ p.job }}</span>
-                </template>
-              </a-list-item-meta>
-            </a-list-item>
-          </a-list>
-        </div>
-
-        <!-- 剧集季列表 -->
-        <div v-if="store.currentItem.type === 'TV' && store.seasons.length > 0">
-          <h4>季列表</h4>
-          <a-list size="small" bordered>
-            <a-list-item v-for="season in store.seasons" :key="season.guid" @click="loadEpisodes(season.guid)"
-              style="cursor: pointer">
-              <a-list-item-meta :title="season.title || `第 ${season.season_number} 季`" />
-            </a-list-item>
-          </a-list>
-        </div>
-
-        <!-- 集列表 -->
-        <div v-if="store.episodes.length > 0" style="margin-top: 16px">
-          <h4>剧集列表</h4>
-          <a-list size="small" bordered>
-            <a-list-item v-for="ep in store.episodes" :key="ep.guid">
-              <a-list-item-meta :title="`S${ep.season_number}E${ep.episode_number} - ${ep.title || ''}`" />
-            </a-list-item>
-          </a-list>
-        </div>
-      </template>
-      <template #footer>
-        <a-space>
-          <a-button :loading="editLoading" @click="handleScrape(store.currentItem!)">
-            <template #icon>
-              <ThunderboltOutlined />
-            </template>
-            刮削
-          </a-button>
-          <a-button :loading="editLoading" @click="handleEdit(store.currentItem!)">
-            <template #icon>
-              <EditOutlined />
-            </template>
-            编辑
-          </a-button>
-          <a-button type="primary" :loading="gettingURL" @click="handlePlay">
-            <template #icon>
-              <PlayCircleOutlined />
-            </template>
-            播放
-          </a-button>
-        </a-space>
-      </template>
-    </a-modal>
+    <MediaDetailModal ref="mediaDetailModelRef" :item="store.currentItem" @edit="handleEdit">
+    </MediaDetailModal>
 
     <!-- 编辑弹窗 -->
     <a-modal v-model:open="editVisible" width="900px" title="编辑媒体信息"
-      :body-style="{ maxHeight: '80vh', overflow: 'auto' }">
+      :body-style="{ maxHeight: '80vh', minHeight: '600px', overflow: 'auto' }">
       <a-spin :spinning="editLoading">
         <a-form v-if="editForm" layout="vertical">
           <a-form-item label="海报">
@@ -352,16 +245,17 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { PlayCircleOutlined, SearchOutlined, EditOutlined, PlusOutlined, ThunderboltOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
+import { SearchOutlined, EditOutlined, PlusOutlined, ThunderboltOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
 import { useTrimMediaStore } from '@/stores/trimmedia'
 import { useMetaTubeStore } from '@/stores/metatube'
 import { useUiStore } from '@/stores/ui'
 import LockButton from '@/components/LockButton.vue'
+import MediaDetailModal from '@/components/MediaDetailModal.vue'
 import { proxyImage } from '@/utils/image'
 import { getEditDetail, saveEditDetail, getGenres, getCountries, batchCreateGenres, searchPersons, importPerson, downloadAndUploadImage, type EditDetail, type EditCredit, type Genre, type Country } from '@/api/trimmedia'
 import { type MovieSearchResult, translateText, type MetaTubeConfig } from '@/api/metatube'
 import { rescrapeItem } from '@/api/scrapelog'
-import type { MediaServerItem } from '@/api/trimmedia'
+import type { MediaItem } from '@/api/trimmedia'
 
 const route = useRoute()
 const router = useRouter()
@@ -369,8 +263,6 @@ const store = useTrimMediaStore()
 const metaTubeStore = useMetaTubeStore()
 const uiStore = useUiStore()
 
-const detailVisible = ref(false)
-const gettingURL = ref(false)
 const searchVisible = ref(false)
 const searching = ref(false)
 
@@ -383,6 +275,8 @@ const genreOptions = ref<Genre[]>([])
 const genresLoading = ref(false)
 const countryOptions = ref<Country[]>([])
 const countriesLoading = ref(false)
+
+const mediaDetailModelRef = ref<typeof MediaDetailModal>()
 
 // 翻译状态
 const translatingTitle = ref(false)
@@ -443,7 +337,7 @@ function backToLibraries() {
   router.push('/media')
 }
 
-function itemYear(item: MediaServerItem): string {
+function itemYear(item: MediaItem): string {
   const date = item.release_date || item.air_date || ''
   return date.slice(0, 4)
 }
@@ -459,34 +353,8 @@ function formatDate(date: string): string {
   return `${y}-${m}-${day}`
 }
 
-async function showDetail(item: MediaServerItem) {
-  detailVisible.value = true
-  await store.fetchItem(item.guid).catch(() => {
-    message.error('获取详情失败')
-  })
-  await store.fetchPersons(item.guid).catch(() => { })
-  if (store.currentItem?.type === 'TV') {
-    await store.fetchSeasons(item.guid).catch(() => { })
-  }
-}
-
-async function loadEpisodes(seasonId: string) {
-  await store.fetchEpisodes(seasonId).catch(() => {
-    message.error('获取剧集列表失败')
-  })
-}
-
-async function handlePlay() {
-  if (!store.currentItem) return
-  gettingURL.value = true
-  try {
-    const url = await store.fetchPlayURL(store.currentItem.guid)
-    window.open(url, '_blank')
-  } catch {
-    message.error('获取播放链接失败')
-  } finally {
-    gettingURL.value = false
-  }
+async function showDetail(item: MediaItem) {
+  mediaDetailModelRef.value?.open(item.guid)
 }
 
 async function handleSearch() {
@@ -534,7 +402,7 @@ async function loadCountries() {
   }
 }
 
-async function handleEdit(item?: MediaServerItem) {
+async function handleEdit(item?: MediaItem) {
   const target = item || store.currentItem
   if (!target) return
   // 确保 currentItem 同步（从卡片直接编辑时需要先设置）
@@ -560,7 +428,7 @@ async function handleEdit(item?: MediaServerItem) {
 }
 
 // 卡片编辑按钮
-function handleCardEdit(item: MediaServerItem) {
+function handleCardEdit(item: MediaItem) {
   handleEdit(item)
 }
 
@@ -794,8 +662,7 @@ async function saveEditFormToTrim(): Promise<boolean> {
   return true
 }
 
-// 刮削：调用后端异步刮削接口
-async function handleScrape(item: MediaServerItem) {
+async function handleScrape(item: MediaItem) {
   scrapingItem.value = item.guid
   try {
     const { data } = await rescrapeItem(item.guid)

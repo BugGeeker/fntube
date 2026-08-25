@@ -29,7 +29,7 @@ export interface MediaStream {
   color_range_type: string[]
 }
 
-export interface MediaServerItem {
+export interface MediaItem {
   guid: string
   imdb_id: string
   trim_id: string
@@ -90,7 +90,7 @@ export interface MediaStatistics {
 }
 
 // 季/集
-export interface SeasonItem {
+export interface Season {
   guid: string
   type: string
   tv_title: string
@@ -200,18 +200,18 @@ export const getLibraries = () => request.get<Library[]>('/trimmedia/libraries')
 // --- 媒体条目 ---
 
 export const getItems = (libraryId: string, start = 0, limit = 20) =>
-  request.get<{ total: number; items: MediaServerItem[] }>(`/trimmedia/items/${libraryId}`, { params: { start, limit } })
+  request.get<{ total: number; items: MediaItem[] }>(`/trimmedia/items/${libraryId}`, { params: { start, limit } })
 
 export const getItem = (itemId: string) =>
-  request.get<MediaServerItem>(`/trimmedia/item/${itemId}`)
+  request.get<MediaItem>(`/trimmedia/item/${itemId}`)
 
 // --- 季集 ---
 
 export const getSeasons = (tvId: string) =>
-  request.get<SeasonItem[]>(`/trimmedia/seasons/${tvId}`)
+  request.get<Season[]>(`/trimmedia/seasons/${tvId}`)
 
 export const getEpisodes = (seasonId: string) =>
-  request.get<SeasonItem[]>(`/trimmedia/episodes/${seasonId}`)
+  request.get<Season[]>(`/trimmedia/episodes/${seasonId}`)
 
 // --- 演职员 ---
 
@@ -293,4 +293,4 @@ export const refreshLibraries = (paths?: string[]) =>
 // --- 搜索 ---
 
 export const searchMedia = (q: string) =>
-  request.get<MediaServerItem[]>('/trimmedia/search', { params: { q } })
+  request.get<MediaItem[]>('/trimmedia/search', { params: { q } })
