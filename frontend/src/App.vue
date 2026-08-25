@@ -29,6 +29,8 @@ import {
   VideoCameraOutlined,
   SettingOutlined,
   TranslationOutlined,
+  FileTextOutlined,
+  ScheduleOutlined,
 } from '@ant-design/icons-vue'
 
 const route = useRoute()
@@ -49,6 +51,16 @@ const menuItems = [
     key: '/metatube-config',
     icon: () => h(TranslationOutlined),
     label: 'MetaTube 配置',
+  },
+  {
+    key: '/scrape-log',
+    icon: () => h(FileTextOutlined),
+    label: '刮削记录',
+  },
+  {
+    key: '/scrape-task',
+    icon: () => h(ScheduleOutlined),
+    label: '刮削计划',
   },
 ]
 

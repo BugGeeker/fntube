@@ -12,11 +12,12 @@ import (
 	"gorm.io/gorm"
 
 	"fntube/internal/handler"
+	"fntube/internal/scheduler"
 	"fntube/internal/trimmedia"
 )
 
 // Register 注册所有路由
-func Register(h *server.Hertz, db *gorm.DB, trimSvc *trimmedia.Service) {
+func Register(h *server.Hertz, db *gorm.DB, trimSvc *trimmedia.Service, sched *scheduler.Scheduler) {
 	// 请求日志中间件
 	h.Use(func(ctx context.Context, c *app.RequestContext) {
 		start := time.Now()
@@ -40,6 +41,12 @@ func Register(h *server.Hertz, db *gorm.DB, trimSvc *trimmedia.Service) {
 
 	// MetaTube
 	handler.RegisterMetaTubeHandlers(h, db)
+
+	// 刮削日志
+	handler.RegisterScrapeLogHandlers(h, db, sched)
+
+	// 刮削计划任务
+	handler.RegisterScrapeTaskHandlers(h, db, trimSvc, sched)
 
 	// 静态文件托管（前端构建产物），优先从应用安装目录读取
 	staticDir := "./app/www"

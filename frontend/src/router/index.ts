@@ -26,6 +26,16 @@ const routes = [
     name: 'MetaTubeConfig',
     component: () => import('@/views/MetaTubeConfigView.vue'),
   },
+  {
+    path: '/scrape-log',
+    name: 'ScrapeLog',
+    component: () => import('@/views/ScrapeLogView.vue'),
+  },
+  {
+    path: '/scrape-task',
+    name: 'ScrapeTask',
+    component: () => import('@/views/ScrapeTaskView.vue'),
+  },
 ]
 
 const router = createRouter({

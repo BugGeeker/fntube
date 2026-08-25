@@ -284,6 +284,117 @@ type actorSearchResp struct {
 	} `json:"error"`
 }
 
+// TranslateResult 翻译结果
+type TranslateResult struct {
+	From           string `json:"from"`
+	To             string `json:"to"`
+	TranslatedText string `json:"translated_text"`
+}
+
+// translateResp GET /v1/translate 响应结构
+type translateResp struct {
+	Data  TranslateResult `json:"data"`
+	Error *struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// Translate 文本翻译（GET /v1/translate）
+// engineConfig 为引擎专属配置的 JSON 字符串，由调用方从数据库读取
+func (c *Client) Translate(q, from, to, engine, engineConfig string) (*TranslateResult, error) {
+	if c.host == "" {
+		return nil, fmt.Errorf("服务地址为空")
+	}
+
+	params := url.Values{}
+	params.Set("q", q)
+	if from != "" {
+		params.Set("from", from)
+	}
+	if to != "" {
+		params.Set("to", to)
+	}
+	if engine != "" {
+		params.Set("engine", engine)
+	}
+
+	// 解析引擎专属配置并映射到 API 参数
+	var cfg map[string]string
+	if engineConfig != "" {
+		_ = json.Unmarshal([]byte(engineConfig), &cfg)
+	}
+
+	switch engine {
+	case "baidu":
+		if v, ok := cfg["baidu_app_id"]; ok && v != "" {
+			params.Set("baidu-app-id", v)
+		}
+		if v, ok := cfg["baidu_secret_key"]; ok && v != "" {
+			params.Set("baidu-app-key", v)
+		}
+	case "deepl":
+		if v, ok := cfg["deepl_api_key"]; ok && v != "" {
+			params.Set("deepl-api-key", v)
+		}
+	case "google":
+		if v, ok := cfg["google_api_key"]; ok && v != "" {
+			params.Set("google-api-key", v)
+		}
+	case "googlefree":
+		// 无需额外配置
+	case "openai":
+		if v, ok := cfg["openai_api_key"]; ok && v != "" {
+			params.Set("openai-api-key", v)
+		}
+		if v, ok := cfg["openai_model"]; ok && v != "" {
+			params.Set("openai-model", v)
+		}
+		if v, ok := cfg["openai_base_url"]; ok && v != "" {
+			params.Set("openai-api-url", v)
+		}
+	}
+
+	u := c.host + "/v1/translate?" + params.Encode()
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("构造请求失败: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("无法连接 MetaTube 服务 %s: %w", c.host, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("读取响应失败: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("响应状态码 %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var tr translateResp
+	if err := json.Unmarshal(body, &tr); err != nil {
+		return nil, fmt.Errorf("解析响应失败: %w", err)
+	}
+	if tr.Error != nil {
+		msg := tr.Error.Message
+		if msg == "" {
+			msg = http.StatusText(tr.Error.Code)
+		}
+		return nil, fmt.Errorf("服务端返回错误: %s", msg)
+	}
+
+	return &tr.Data, nil
+}
+
 // SearchActors 搜索演员（GET /v1/actors/search?q=<keyword>）
 func (c *Client) SearchActors(keyword string) ([]ActorSearchResult, error) {
 	if c.host == "" {

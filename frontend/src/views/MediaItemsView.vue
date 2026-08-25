@@ -7,14 +7,34 @@
       </template>
       <a-spin :spinning="store.loading">
         <a-row :gutter="[16, 16]">
-          <a-col v-for="item in store.items" :key="item.guid" :xs="24" :sm="12" :md="8" :lg="8" :xl="6">
-            <a-card hoverable size="small" @click="showDetail(item)" style="overflow: hidden">
+          <a-col v-for="item in store.items" :key="item.guid" :xs="24" :sm="12" :md="8" :lg="8" :xl="6" :xxl="4">
+            <a-card hoverable size="small" @click="showDetail(item)" class="media-card">
               <template #cover>
-                <img v-if="!uiStore.hideImages && item.poster" :src="proxyImage(item.poster)"
-                  style="width: 100%; aspect-ratio: 3 / 2; object-fit: cover;" alt="poster" />
-                <div v-else
-                  style="width: 100%; aspect-ratio: 3 / 2; display: flex; align-items: center; justify-content: center; background: #f5f5f5">
-                  <span style="color: #999; font-size: 24px">{{ item.title?.charAt(0) || '?' }}</span>
+                <div style="position: relative;">
+                  <img v-if="!uiStore.hideImages && item.poster" :src="proxyImage(item.poster)"
+                    style="width: 100%; aspect-ratio: 3 / 2; object-fit: contain;" alt="poster" />
+                  <div v-else
+                    style="width: 100%; aspect-ratio: 3 / 2; display: flex; align-items: center; justify-content: center; background: #f5f5f5">
+                    <span style="color: #999; font-size: 24px">{{ item.title?.charAt(0) || '?' }}</span>
+                  </div>
+                  <div class="card-actions" @click.stop">
+                    <a-button size="medium" shape="circle" @click.stop="handleCardEdit(item)" title="播放">
+                      <template #icon>
+                        <CaretRightOutlined />
+                      </template>
+                    </a-button>
+                    <a-button size="medium" shape="circle" @click.stop="handleCardEdit(item)" title="编辑">
+                      <template #icon>
+                        <EditOutlined />
+                      </template>
+                    </a-button>
+                    <a-button size="medium" shape="circle" :loading="scrapingItem === item.guid"
+                      @click.stop="handleScrape(item)" title="刮削">
+                      <template #icon>
+                        <ThunderboltOutlined />
+                      </template>
+                    </a-button>
+                  </div>
                 </div>
               </template>
               <a-card-meta>
@@ -32,22 +52,16 @@
         </a-row>
         <a-empty v-if="!store.loading && store.items.length === 0" description="该媒体库暂无内容" />
       </a-spin>
-      <div v-if="!store.loading && store.itemsTotal > 0" style="display: flex; justify-content: center; margin-top: 16px">
-        <a-pagination
-          v-model:current="currentPage"
-          v-model:page-size="pageSize"
-          :total="store.itemsTotal"
-          :page-size-options="[10, 20, 50, 100]"
-          show-size-changer
-          :show-total="(total: number) => `共 ${total} 项`"
-          @change="handlePageChange"
-          @show-size-change="handlePageChange"
-        />
+      <div v-if="!store.loading && store.itemsTotal > 0"
+        style="display: flex; justify-content: center; margin-top: 16px">
+        <a-pagination v-model:current="currentPage" v-model:page-size="pageSize" :total="store.itemsTotal"
+          :page-size-options="[10, 20, 50, 100]" show-size-changer :show-total="(total: number) => `共 ${total} 项`"
+          @change="handlePageChange" @show-size-change="handlePageChange" />
       </div>
     </a-card>
 
     <!-- 媒体详情弹窗 -->
-    <a-modal v-model:open="detailVisible" width="1000px" :title="store.currentItem?.title || '详情'" :footer="null"
+    <a-modal v-model:open="detailVisible" width="1000px" :title="store.currentItem?.title || '详情'"
       :body-style="{ maxHeight: '80vh', overflow: 'auto' }">
       <template v-if="store.currentItem">
         <!-- 顶部图片横向布局 -->
@@ -68,8 +82,7 @@
           <!-- Logo -->
           <div style="flex: 1; min-width: 0;">
             <img :src="proxyImage(store.currentItem.logo)"
-              style="width: 100%; aspect-ratio: 3 / 2; object-fit: contain; border-radius: 8px; background: #1a1a2e;"
-              alt="logo" />
+              style="width: 100%; aspect-ratio: 3 / 2; object-fit: contain; border-radius: 8px;" alt="logo" />
           </div>
         </div>
 
@@ -133,23 +146,28 @@
             </a-list-item>
           </a-list>
         </div>
-
-        <div style="margin-top: 24px">
-          <a-space>
-            <a-button type="primary" :loading="gettingURL" @click="handlePlay">
-              <template #icon>
-                <PlayCircleOutlined />
-              </template>
-              播放
-            </a-button>
-            <a-button :loading="editLoading" @click="handleEdit">
-              <template #icon>
-                <EditOutlined />
-              </template>
-              编辑
-            </a-button>
-          </a-space>
-        </div>
+      </template>
+      <template #footer>
+        <a-space>
+          <a-button :loading="editLoading" @click="handleScrape(store.currentItem!)">
+            <template #icon>
+              <ThunderboltOutlined />
+            </template>
+            刮削
+          </a-button>
+          <a-button :loading="editLoading" @click="handleEdit(store.currentItem!)">
+            <template #icon>
+              <EditOutlined />
+            </template>
+            编辑
+          </a-button>
+          <a-button type="primary" :loading="gettingURL" @click="handlePlay">
+            <template #icon>
+              <PlayCircleOutlined />
+            </template>
+            播放
+          </a-button>
+        </a-space>
       </template>
     </a-modal>
 
@@ -179,6 +197,7 @@
           <a-form-item label="标题">
             <a-flex gap="middle" align="center">
               <a-input v-model:value="editForm.title" />
+              <a-spin v-if="translatingTitle" size="small" />
               <LockButton v-model:locked="editForm.title_locked" />
             </a-flex>
           </a-form-item>
@@ -186,6 +205,7 @@
           <a-form-item label="简介">
             <a-flex gap="middle" align="center">
               <a-textarea v-model:value="editForm.overview" :rows="4" />
+              <a-spin v-if="translatingOverview" size="small" />
               <LockButton v-model:locked="editForm.overview_locked" />
             </a-flex>
           </a-form-item>
@@ -332,14 +352,15 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { PlayCircleOutlined, SearchOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { PlayCircleOutlined, SearchOutlined, EditOutlined, PlusOutlined, ThunderboltOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
 import { useTrimMediaStore } from '@/stores/trimmedia'
 import { useMetaTubeStore } from '@/stores/metatube'
 import { useUiStore } from '@/stores/ui'
 import LockButton from '@/components/LockButton.vue'
 import { proxyImage } from '@/utils/image'
 import { getEditDetail, saveEditDetail, getGenres, getCountries, batchCreateGenres, searchPersons, importPerson, downloadAndUploadImage, type EditDetail, type EditCredit, type Genre, type Country } from '@/api/trimmedia'
-import { type MovieSearchResult } from '@/api/metatube'
+import { type MovieSearchResult, translateText, type MetaTubeConfig } from '@/api/metatube'
+import { rescrapeItem } from '@/api/scrapelog'
 import type { MediaServerItem } from '@/api/trimmedia'
 
 const route = useRoute()
@@ -362,6 +383,13 @@ const genreOptions = ref<Genre[]>([])
 const genresLoading = ref(false)
 const countryOptions = ref<Country[]>([])
 const countriesLoading = ref(false)
+
+// 翻译状态
+const translatingTitle = ref(false)
+const translatingOverview = ref(false)
+
+// 刮削状态
+const scrapingItem = ref<string | null>(null)
 
 // first_air_date / last_air_date 可能为 null，用 computed 桥接到 input
 const firstAirDateValue = computed({
@@ -404,6 +432,8 @@ onMounted(async () => {
       message.warning('未连接到飞牛影视，请先配置')
     })
   }
+  // 加载 MetaTube 配置（用于判断翻译模式）
+  await metaTubeStore.fetchConfig().catch(() => { })
   // 加载该媒体库第一页条目
   currentPage.value = 1
   await loadItems()
@@ -461,7 +491,7 @@ async function handlePlay() {
 
 async function handleSearch() {
   if (!store.currentItem) return
-  const keyword = store.currentItem.parent_title || store.currentItem.title
+  const keyword = store.currentItem.title
   if (!keyword) {
     message.warning('无法获取搜索关键词')
     return
@@ -504,14 +534,19 @@ async function loadCountries() {
   }
 }
 
-async function handleEdit() {
-  if (!store.currentItem) return
+async function handleEdit(item?: MediaServerItem) {
+  const target = item || store.currentItem
+  if (!target) return
+  // 确保 currentItem 同步（从卡片直接编辑时需要先设置）
+  if (!store.currentItem || store.currentItem.guid !== target.guid) {
+    store.currentItem = target
+  }
   editVisible.value = true
   editLoading.value = true
   // 并行加载编辑信息、类型列表与地区列表
   try {
     const [editRes] = await Promise.all([
-      getEditDetail(store.currentItem.guid),
+      getEditDetail(target.guid),
       loadGenres(),
       loadCountries(),
     ])
@@ -522,6 +557,11 @@ async function handleEdit() {
   } finally {
     editLoading.value = false
   }
+}
+
+// 卡片编辑按钮
+function handleCardEdit(item: MediaServerItem) {
+  handleEdit(item)
 }
 
 function addCredit() {
@@ -544,44 +584,7 @@ async function handleSaveEdit() {
   if (!editForm.value || !store.currentItem) return
   editSaving.value = true
   try {
-    // 封面/背景图为 http 网络图片时，先下载并上传到飞牛，再使用飞牛返回的本地路径保存
-    const imageFields: Array<{ key: 'posters' | 'backdrops'; type: string }> = [
-      { key: 'posters', type: 'poster' },
-      { key: 'backdrops', type: 'backdrop' },
-    ]
-    for (const { key, type } of imageFields) {
-      const value = editForm.value[key]
-      if (typeof value === 'string' && (value.startsWith('http://') || value.startsWith('https://'))) {
-        try {
-          const { data } = await downloadAndUploadImage(value, type)
-          editForm.value[key] = data.path
-        } catch {
-          message.warning('网络图片上传飞牛失败，将保留原地址')
-        }
-      }
-    }
-    const pendingGenres = editForm.value.genres.filter(g => typeof g === 'string')
-    const genres = editForm.value.genres.filter(g => typeof g === 'number')
-    // 如果有待创建的新分类，先调用批量创建接口获取 id
-    if (pendingGenres.length > 0) {
-      try {
-        const { data: newGenres } = await batchCreateGenres(pendingGenres)
-        // 将新分类 id 合并入 genres
-        for (const g of newGenres) {
-          if (!genres.includes(g.id)) {
-            genres.push(g.id)
-          }
-          // 同步更新下拉选项，避免显示空白
-          if (!genreOptions.value.some(opt => opt.id === g.id)) {
-            genreOptions.value.push(g)
-          }
-        }
-        editForm.value.genres = genres
-      } catch {
-        message.warning('部分新分类创建失败，将仅保存已存在的分类')
-      }
-    }
-    await saveEditDetail(store.currentItem.guid, editForm.value)
+    await saveEditFormToTrim()
     message.success('保存成功')
     editVisible.value = false
   } catch {
@@ -602,102 +605,207 @@ async function handleSearchResultClick(result: MovieSearchResult) {
       return
     }
     // 将 MetaTube 影片信息填入编辑表单（仅覆盖未锁定字段）
-    if (!editForm.value.title_locked && info.title) {
-      editForm.value.title = info.title
-    }
-    if (!editForm.value.overview_locked && info.summary) {
-      editForm.value.overview = info.summary
-    }
-    if (!editForm.value.rating_locked && info.score) {
-      editForm.value.rating = info.score
-    }
-    if (!editForm.value.content_rating_locked) {
-      editForm.value.content_rating = 'JP-18+'
-    }
-    if (!editForm.value.air_date_locked && info.release_date) {
-      editForm.value.air_date = formatDate(info.release_date)
-    }
-    if (!editForm.value.posters_locked && (info.cover_url || info.big_cover_url || info.thumb_url)) {
-      editForm.value.posters = info.big_cover_url || info.cover_url || info.thumb_url
-    }
-    if (!editForm.value.backdrops_locked && (info.thumb_url || info.big_thumb_url)) {
-      editForm.value.backdrops = info.big_thumb_url || info.thumb_url
-    }
-    if (!editForm.value.genres_locked && info.genres && info.genres.length > 0) {
-      const matchedIds: number[] = []
-      const unmatchedTexts: string[] = []
-      for (const g of info.genres) {
-        const found = genreOptions.value.find(opt => opt.value === g)
-        if (found) {
-          matchedIds.push(found.id)
-        } else {
-          unmatchedTexts.push(g)
-        }
-      }
-      editForm.value.genres = [...matchedIds, ...unmatchedTexts]
-    }
-    // 演职员：actors 为字符串数组，通过飞牛演员搜索接口查询是否已存在
-    if (!editForm.value.credits_locked && info.actors && info.actors.length > 0) {
-      const credits: EditCredit[] = []
-      for (let idx = 0; idx < info.actors.length; idx++) {
-        const name = info.actors[idx]
-        try {
-          const { data: persons } = await searchPersons(name, 1, 10)
-          if (persons && persons.length > 0) {
-            // 已存在，使用第一个匹配的演员信息
-            const person = persons[0]
-            credits.push({
-              person_guid: person.guid,
-              name: person.name,
-              job: 'Actor',
-              role: '',
-              order: idx + 1,
-              profile_path: person.profile,
-            })
-          } else {
-            // 不存在，通过 MetaTube 搜索演员 → 下载图片 → 上传 → 创建
-            try {
-              const { data: imported } = await importPerson(name)
-              credits.push({
-                person_guid: imported.guid,
-                name: imported.name,
-                job: 'Actor',
-                role: '',
-                order: idx + 1,
-                profile_path: imported.profile_path,
-              })
-            } catch {
-              // 导入失败，使用空信息
-              credits.push({
-                person_guid: '',
-                name,
-                job: 'Actor',
-                role: '',
-                order: idx + 1,
-                profile_path: '',
-              })
-            }
-          }
-        } catch {
-          // 搜索失败时仍使用当前添加方法
-          credits.push({
-            person_guid: '',
-            name,
-            job: 'Actor',
-            role: '',
-            order: idx + 1,
-            profile_path: '',
-          })
-        }
-      }
-      editForm.value.credits = credits
-    }
+    await fillEditFormFromMovieInfo(info)
     message.success('已填入影片信息')
     searchVisible.value = false
+
   } catch {
     message.error('获取影片详情失败')
   } finally {
     searching.value = false
+  }
+}
+
+// 将 MetaTube 影片信息填入编辑表单的核心逻辑（抽取以便复用）
+async function fillEditFormFromMovieInfo(info: NonNullable<Awaited<ReturnType<typeof metaTubeStore.fetchMovieDetail>>>) {
+  if (!editForm.value) return
+  // 将 MetaTube 影片信息填入编辑表单（仅覆盖未锁定字段）
+  if (!editForm.value.title_locked && info.number) {
+    editForm.value.title = info.number + (info.title ? (' ' + info.title) : '')
+  }
+  if (!editForm.value.overview_locked && info.summary) {
+    editForm.value.overview = info.summary
+  }
+  if (!editForm.value.rating_locked && info.score) {
+    editForm.value.rating = info.score
+  }
+  if (!editForm.value.content_rating_locked) {
+    editForm.value.content_rating = 'JP-18+'
+  }
+  if (!editForm.value.air_date_locked && info.release_date) {
+    editForm.value.air_date = formatDate(info.release_date)
+  }
+  if (!editForm.value.posters_locked && (info.cover_url || info.big_cover_url || info.thumb_url)) {
+    editForm.value.posters = info.big_cover_url || info.cover_url || info.thumb_url
+  }
+  if (!editForm.value.backdrops_locked && (info.thumb_url || info.big_thumb_url)) {
+    editForm.value.backdrops = info.big_thumb_url || info.thumb_url
+  }
+  if (!editForm.value.genres_locked && info.genres && info.genres.length > 0) {
+    const matchedIds: number[] = []
+    const unmatchedTexts: string[] = []
+    for (const g of info.genres) {
+      const found = genreOptions.value.find(opt => opt.value === g)
+      if (found) {
+        matchedIds.push(found.id)
+      } else {
+        unmatchedTexts.push(g)
+      }
+    }
+    editForm.value.genres = [...matchedIds, ...unmatchedTexts]
+  }
+  // 演职员：actors 为字符串数组，通过飞牛演员搜索接口查询是否已存在
+  if (!editForm.value.credits_locked && info.actors && info.actors.length > 0) {
+    const credits: EditCredit[] = []
+    for (let idx = 0; idx < info.actors.length; idx++) {
+      const name = info.actors[idx]
+      try {
+        const { data: persons } = await searchPersons(name, 1, 10)
+        if (persons && persons.length > 0) {
+          // 已存在，使用第一个匹配的演员信息
+          const person = persons[0]
+          credits.push({
+            person_guid: person.guid,
+            name: person.name,
+            job: 'Actor',
+            role: '',
+            order: idx + 1,
+            profile_path: person.profile,
+          })
+        } else {
+          // 不存在，通过 MetaTube 搜索演员 → 下载图片 → 上传 → 创建
+          try {
+            const { data: imported } = await importPerson(name)
+            credits.push({
+              person_guid: imported.guid,
+              name: imported.name,
+              job: 'Actor',
+              role: '',
+              order: idx + 1,
+              profile_path: imported.profile_path,
+            })
+          } catch {
+            // 导入失败，使用空信息
+            credits.push({
+              person_guid: '',
+              name,
+              job: 'Actor',
+              role: '',
+              order: idx + 1,
+              profile_path: '',
+            })
+          }
+        }
+      } catch {
+        // 搜索失败时仍使用当前添加方法
+        credits.push({
+          person_guid: '',
+          name,
+          job: 'Actor',
+          role: '',
+          order: idx + 1,
+          profile_path: '',
+        })
+      }
+    }
+    editForm.value.credits = credits
+  }
+
+  // 翻译逻辑：根据配置的 translate_mode 异步翻译标题和/或简介
+  const cfg = metaTubeStore.config as MetaTubeConfig | null
+  const mode = cfg?.translate_mode || 'none'
+  if (mode !== 'none') {
+    const shouldTranslateTitle = (mode === 'title' || mode === 'title_and_summary')
+    const shouldTranslateOverview = (mode === 'summary' || mode === 'title_and_summary')
+    const translateTasks: Promise<void>[] = []
+    if (shouldTranslateTitle && !editForm.value.title_locked && info.title) {
+      translatingTitle.value = true
+      translateTasks.push(
+        translateText(info.title).then(({ data: res }) => {
+          if (res?.data?.translated_text && editForm.value && !editForm.value.title_locked) {
+            editForm.value.title = info.number + ' ' + res.data.translated_text
+          }
+        }).catch(() => {
+          message.warning('标题翻译失败')
+        }).finally(() => {
+          translatingTitle.value = false
+        })
+      )
+    }
+    if (shouldTranslateOverview && !editForm.value.overview_locked && info.summary) {
+      translatingOverview.value = true
+      translateTasks.push(
+        translateText(info.summary).then(({ data: res }) => {
+          if (res?.data?.translated_text && editForm.value && !editForm.value.overview_locked) {
+            editForm.value.overview = res.data.translated_text
+          }
+        }).catch(() => {
+          message.warning('简介翻译失败')
+        }).finally(() => {
+          translatingOverview.value = false
+        })
+      )
+    }
+    await Promise.all(translateTasks)
+  }
+}
+
+// 保存编辑信息到飞牛
+async function saveEditFormToTrim(): Promise<boolean> {
+  if (!editForm.value || !store.currentItem) return false
+  // 封面/背景图为 http 网络图片时，先下载并上传到飞牛，再使用飞牛返回的本地路径保存
+  const imageFields: Array<{ key: 'posters' | 'backdrops'; type: string }> = [
+    { key: 'posters', type: 'poster' },
+    { key: 'backdrops', type: 'backdrop' },
+  ]
+  for (const { key, type } of imageFields) {
+    const value = editForm.value[key]
+    if (typeof value === 'string' && (value.startsWith('http://') || value.startsWith('https://'))) {
+      try {
+        const { data } = await downloadAndUploadImage(value, type)
+        editForm.value[key] = data.path
+      } catch {
+        message.warning('网络图片上传飞牛失败，将保留原地址')
+      }
+    }
+  }
+  const pendingGenres = editForm.value.genres.filter(g => typeof g === 'string')
+  const genres = editForm.value.genres.filter(g => typeof g === 'number')
+  // 如果有待创建的新分类，先调用批量创建接口获取 id
+  if (pendingGenres.length > 0) {
+    try {
+      const { data: newGenres } = await batchCreateGenres(pendingGenres)
+      // 将新分类 id 合并入 genres
+      for (const g of newGenres) {
+        if (!genres.includes(g.id)) {
+          genres.push(g.id)
+        }
+        // 同步更新下拉选项，避免显示空白
+        if (!genreOptions.value.some(opt => opt.id === g.id)) {
+          genreOptions.value.push(g)
+        }
+      }
+      editForm.value.genres = genres
+    } catch {
+      message.warning('部分新分类创建失败，将仅保存已存在的分类')
+    }
+  }
+  await saveEditDetail(store.currentItem.guid, editForm.value)
+  return true
+}
+
+// 刮削：调用后端异步刮削接口
+async function handleScrape(item: MediaServerItem) {
+  scrapingItem.value = item.guid
+  try {
+    const { data } = await rescrapeItem(item.guid)
+    message.success(data.message || '刮削已开始')
+    // 延迟刷新列表
+    setTimeout(() => loadItems(), 5000)
+  } catch {
+    message.error('刮削失败')
+  } finally {
+    scrapingItem.value = null
   }
 }
 </script>
@@ -719,4 +827,25 @@ async function handleSearchResultClick(result: MovieSearchResult) {
   min-width: 0;
   overflow: hidden;
 }
+
+.media-card{
+  position: relative;
+  &:hover {
+    .card-actions {
+      opacity: 1;
+    }
+  }
+}
+
+/* 卡片操作按钮：hover 时显示 */
+.card-actions {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
 </style>

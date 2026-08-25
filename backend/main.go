@@ -9,6 +9,7 @@ import (
 	"fntube/internal/database"
 	"fntube/internal/model"
 	"fntube/internal/router"
+	"fntube/internal/scheduler"
 	"fntube/internal/trimmedia"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
@@ -56,6 +57,10 @@ func main() {
 	// 初始化飞牛影视服务
 	trimSvc := initTrimMediaService(db)
 
+	// 初始化刮削计划任务调度器
+	sched := scheduler.NewScheduler(db, trimSvc)
+	sched.Start()
+
 	// 端口：优先使用飞牛注入的 {port} 环境变量
 	port := os.Getenv("FN_APP_PORT")
 	if port == "" {
@@ -66,7 +71,7 @@ func main() {
 	h := server.Default(server.WithHostPorts(fmt.Sprintf(":%s", port)))
 
 	// 注册路由
-	router.Register(h, db, trimSvc)
+	router.Register(h, db, trimSvc, sched)
 
 	// 启动服务
 	h.Spin()

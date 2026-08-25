@@ -29,6 +29,7 @@ func RegisterMetaTubeHandlers(h *server.Hertz, db *gorm.DB) {
 	g.POST("/test", hd.testConnection)
 	g.GET("/search", hd.searchMovies)
 	g.GET("/movie/:provider/:id", hd.getMovieInfo)
+	g.GET("/translate", hd.translateText)
 }
 
 // metaTubeConfigView 配置视图，避免暴露 Token 详情
@@ -215,5 +216,48 @@ func (h *MetaTubeHandler) getMovieInfo(ctx context.Context, c *app.RequestContex
 
 	c.JSON(200, map[string]interface{}{
 		"data": info,
+	})
+}
+
+// translateText 文本翻译
+// 从数据库读取 MetaTube 配置，调用 MetaTube 服务端 GET /v1/translate
+func (h *MetaTubeHandler) translateText(ctx context.Context, c *app.RequestContext) {
+	q := string(c.Query("q"))
+	if q == "" {
+		c.JSON(400, map[string]string{"error": "翻译文本不能为空"})
+		return
+	}
+
+	// 从数据库读取配置
+	var cfg metaTubeConfigView
+	if err := h.db.Table("meta_tube_configs").Order("id desc").First(&cfg).Error; err != nil {
+		c.JSON(400, map[string]string{"error": "未配置 MetaTube，请先保存配置"})
+		return
+	}
+	if cfg.Host == "" {
+		c.JSON(400, map[string]string{"error": "MetaTube 服务地址为空，请先配置"})
+		return
+	}
+	if cfg.TranslateMode == "none" || cfg.TranslateMode == "" {
+		c.JSON(400, map[string]string{"error": "翻译未开启"})
+		return
+	}
+
+	to := string(c.Query("to"))
+	if to == "" {
+		to = "zh-CN"
+	}
+
+	client := metatube.NewClient(cfg.Host, cfg.Token)
+	defer client.Close()
+
+	result, err := client.Translate(q, "", to, cfg.TranslateEngine, cfg.EngineConfig)
+	if err != nil {
+		c.JSON(400, map[string]string{"error": "翻译失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(200, map[string]interface{}{
+		"data": result,
 	})
 }

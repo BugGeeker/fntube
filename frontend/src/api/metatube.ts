@@ -104,3 +104,14 @@ export interface MovieInfo {
 // 获取影片详情
 export const getMovieInfo = (provider: string, id: string) =>
   request.get<{ data: MovieInfo }>(`/metatube/movie/${provider}/${id}`)
+
+// 翻译结果
+export interface TranslateResult {
+  from: string
+  to: string
+  translated_text: string
+}
+
+// 文本翻译
+export const translateText = (q: string, to?: string) =>
+  request.get<{ data: TranslateResult }>('/metatube/translate', { params: { q, to } })
