@@ -48,6 +48,12 @@ func Register(h *server.Hertz, db *gorm.DB, trimSvc *trimmedia.Service, sched *s
 	// 刮削计划任务
 	handler.RegisterScrapeTaskHandlers(h, db, trimSvc, sched)
 
+	// 刮削任务运行记录
+	handler.RegisterTaskRunRecordHandlers(h, db)
+
+	// 总览页
+	handler.RegisterDashboardHandlers(h, db, trimSvc)
+
 	// 静态文件托管（前端构建产物），优先从应用安装目录读取
 	staticDir := "./app/www"
 	if appDest := os.Getenv("TRIM_APPDEST"); appDest != "" {

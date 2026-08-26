@@ -2,13 +2,8 @@
   <div class="app-container">
     <!-- 左侧悬浮导航菜单 -->
     <div class="floating-menu">
-      <a-menu
-        v-model:selectedKeys="selectedKeys"
-        mode="inline"
-        theme="dark"
-        :items="menuItems"
-        @click="handleMenuClick"
-      />
+      <a-menu v-model:selectedKeys="selectedKeys" mode="inline" :inline-collapsed="collapsed" :items="menuItems"
+        @click="handleMenuClick" class="menu" />
     </div>
 
     <!-- 主内容区 -->
@@ -23,9 +18,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, h } from 'vue'
+import { ref, watch, h, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  DashboardOutlined,
   VideoCameraOutlined,
   SettingOutlined,
   TranslationOutlined,
@@ -36,7 +32,27 @@ import {
 const route = useRoute()
 const router = useRouter()
 
+const collapsed = ref(false)
+
+function checkCollapsed() {
+  collapsed.value = window.innerWidth < 640
+}
+
+onMounted(() => {
+  checkCollapsed()
+  window.addEventListener('resize', checkCollapsed)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', checkCollapsed)
+})
+
 const menuItems = [
+  {
+    key: '/',
+    icon: () => h(DashboardOutlined),
+    label: '总览',
+  },
   {
     key: '/media',
     icon: () => h(VideoCameraOutlined),
@@ -91,15 +107,18 @@ function handleMenuClick({ key }: { key: string }) {
 }
 
 .floating-menu {
-  position: fixed;
-  top: 24px;
-  left: 24px;
-  bottom: 24px;
-  width: 200px;
-  z-index: 100;
+  position: sticky;
+  top: 12px;
+  align-self: flex-start;
+  height: calc(100vh - 24px);
   border-radius: 12px;
+  margin: 12px;
   overflow: hidden;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+
+  .menu {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  }
+
 }
 
 .floating-menu :deep(.ant-menu) {
@@ -111,27 +130,8 @@ function handleMenuClick({ key }: { key: string }) {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  margin-left: 224px;
-  padding: 24px;
+  padding: 12px;
   min-height: 100vh;
 }
 
-@media (max-width: 768px) {
-  .floating-menu {
-    width: 64px;
-  }
-
-  .floating-menu :deep(.ant-menu-item) {
-    padding-inline: 0 !important;
-    text-align: center;
-  }
-
-  .floating-menu :deep(.ant-menu-item .anticon) {
-    font-size: 18px;
-  }
-
-  .main-content {
-    margin-left: 112px;
-  }
-}
 </style>

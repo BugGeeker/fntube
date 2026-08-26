@@ -11,12 +11,8 @@
             <a-card hoverable size="small" @click="showDetail(item)" class="media-card">
               <template #cover>
                 <div style="position: relative;">
-                  <img v-if="!uiStore.hideImages && item.poster" :src="proxyImage(item.poster)"
-                    style="width: 100%; aspect-ratio: 3 / 2; object-fit: contain;" alt="poster" />
-                  <div v-else
-                    style="width: 100%; aspect-ratio: 3 / 2; display: flex; align-items: center; justify-content: center; background: #f5f5f5">
-                    <span style="color: #999; font-size: 24px">{{ item.title?.charAt(0) || '?' }}</span>
-                  </div>
+                  <MediaImage :src="proxyImage(item.poster)" :alt="item.title" ratio="2 / 3" />
+
                   <div class="card-actions" @click.stop">
                     <a-button size="medium" shape="circle" @click.stop="handleCardEdit(item)" title="播放">
                       <template #icon>
@@ -61,7 +57,7 @@
     </a-card>
 
     <!-- 媒体详情弹窗 -->
-    <MediaDetailModal ref="mediaDetailModelRef" :item="store.currentItem" @edit="handleEdit"/>
+    <MediaDetailModal ref="mediaDetailModelRef" :item="store.currentItem" @edit="handleEdit" />
 
     <!-- 编辑弹窗 -->
     <MediaEditModal ref="editModalRef" />
@@ -81,6 +77,7 @@ import MediaDetailModal from '@/components/MediaDetailModal.vue'
 import MediaEditModal from '@/components/MediaEditModal.vue'
 import { proxyImage } from '@/utils/image'
 import { rescrapeItem } from '@/api/scrapelog'
+import MediaImage from '@/components/MediaImage.vue'
 import type { MediaItem } from '@/api/trimmedia'
 
 const route = useRoute()
@@ -142,17 +139,6 @@ function itemYear(item: MediaItem): string {
   return date.slice(0, 4)
 }
 
-// 将 ISO 日期（如 2026-08-06T00:00:00Z）格式化为 YYYY-MM-DD
-function formatDate(date: string): string {
-  if (!date) return ''
-  const d = new Date(date)
-  if (isNaN(d.getTime())) return date
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
 async function showDetail(item: MediaItem) {
   mediaDetailModelRef.value?.open(item.guid)
 }
@@ -199,8 +185,9 @@ async function handleScrape(item: MediaItem) {
   overflow: hidden;
 }
 
-.media-card{
+.media-card {
   position: relative;
+
   &:hover {
     .card-actions {
       opacity: 1;
@@ -218,5 +205,4 @@ async function handleScrape(item: MediaItem) {
   opacity: 0;
   transition: opacity 0.2s ease;
 }
-
 </style>

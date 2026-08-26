@@ -107,6 +107,7 @@ fntube/
 ### 前端
 
 - 使用 Vue 3 + TypeScript 开发，UI 基于 Ant Design Vue
+- 仅允许使用 pnpm 安装依赖，禁止使用npm或yarn
 - 状态管理使用 Pinia
 - 构建产物部署至 `app/www/` 目录下，由后端静态托管
 - 桌面图标使用 `app/ui/images/` 下的 `icon_256.png` 和 `icon_64.png`

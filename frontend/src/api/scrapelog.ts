@@ -1,5 +1,12 @@
 import request from './request'
 
+// 刮削步骤记录
+export interface ScrapeStep {
+  step: string
+  status: string // running | success | failed
+  error?: string
+}
+
 // 刮削日志
 export interface ScrapeLog {
   id: number
@@ -7,7 +14,11 @@ export interface ScrapeLog {
   title: string
   number: string
   method: string // manual | auto
+  status: string // in_progress | success | failed | completed
+  steps: string // JSON 字符串，解析为 ScrapeStep[]
+  error: string
   created_at: string
+  updated_at: string
 }
 
 // 获取刮削日志列表（分页）

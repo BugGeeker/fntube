@@ -191,7 +191,12 @@ export const getConfig = () => request.get<TrimMediaConfig>('/trimmedia/config')
 export const saveConfig = (data: TrimMediaConfig) => request.post('/trimmedia/config', data)
 
 export const testConnection = (data: Partial<TrimMediaConfig>) =>
-  request.post<{ status: string; version?: { frontend?: string; backend?: string }; user?: boolean }>('/trimmedia/test', data)
+  request.post<{
+    status: string
+    version?: { frontend?: string; backend?: string }
+    user?: boolean
+    libraries?: Library[]
+  }>('/trimmedia/test', data)
 
 // --- 媒体库 ---
 

@@ -9,6 +9,7 @@ export interface ScrapeTask {
   interval: number // 扫描频率（分钟）
   enabled: boolean
   last_run_at: string | null
+  is_running?: boolean // 是否正在运行
   created_at: string
   updated_at: string
 }

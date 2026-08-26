@@ -4,20 +4,15 @@
     <a-spin :spinning="loading">
       <template v-if="item">
         <!-- 顶部图片横向布局 -->
-        <div v-if="!uiStore.hideImages && (item.backdrop || item.poster || item.logo)"
-          style="display: flex; gap: 12px; margin-bottom: 16px;">
+        <div style="display: flex; gap: 12px; margin-bottom: 16px;">
           <div style="flex: 1; min-width: 0;">
-            <img :src="proxyImage(item.poster)"
-              style="width: 100%; aspect-ratio: 3 / 2; object-fit: contain; border-radius: 8px;" alt="poster" />
+            <MediaImage :src="proxyImage(item.poster)" ratio="3/2" />
           </div>
           <div style="flex: 1; min-width: 0;">
-            <img :src="proxyImage(item.backdrop)"
-              style="width: 100%; aspect-ratio: 3 / 2; object-fit: contain; border-radius: 8px;" alt="backdrop" />
+            <MediaImage :src="proxyImage(item.backdrop)" ratio="3/2" />
           </div>
           <div style="flex: 1; min-width: 0;">
-            <img :src="proxyImage(item.logo)"
-              style="width: 100%; aspect-ratio: 3 / 2; object-fit: contain; border-radius: 8px; background: #1a1a2e;"
-              alt="logo" />
+            <MediaImage :src="proxyImage(item.logo)" ratio="3/2" />
           </div>
         </div>
 
@@ -66,7 +61,8 @@
           <a-list size="small" bordered>
             <a-list-item v-for="season in seasons" :key="season.guid" @click="loadEpisodes(season.guid)"
               style="cursor: pointer">
-              <a-list-item-meta :title="`第 ${season.season_number} 季 ${season.title ? ` - ${season.title}` : ''}`" :description="season.overview" />
+              <a-list-item-meta :title="`第 ${season.season_number} 季 ${season.title ? ` - ${season.title}` : ''}`"
+                :description="season.overview" />
             </a-list-item>
           </a-list>
         </div>
@@ -115,6 +111,7 @@ import { getEpisodes, getItem, getPersons, getPlayURL, getSeasons, type MediaIte
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { rescrapeItem } from '@/api/scrapelog'
+import MediaImage from './MediaImage.vue'
 
 import MediaEditModal from './MediaEditModal.vue'
 

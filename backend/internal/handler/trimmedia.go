@@ -66,11 +66,12 @@ func (h *TrimMediaHandler) getConfig(ctx context.Context, c *app.RequestContext)
 	c.JSON(200, cfg)
 }
 
-// trimmediaConfigView 配置视图，避免直接暴露密码
+// trimmediaConfigView 配置视图
 type trimmediaConfigView struct {
 	ID            uint   `json:"id"`
 	Host          string `json:"host"`
 	Username      string `json:"username"`
+	Password      string `json:"password"`
 	AccessCode    string `json:"access_code"`
 	PlayHost      string `json:"play_host"`
 	SyncLibraries string `json:"sync_libraries"`
@@ -152,10 +153,12 @@ func (h *TrimMediaHandler) testConnection(ctx context.Context, c *app.RequestCon
 		return
 	}
 	defer svc.Disconnect()
+	libs, _ := svc.GetLibraries(false)
 	c.JSON(200, map[string]interface{}{
-		"status":  "ok",
-		"version": svc.Client().Version(),
-		"user":    svc.Client().Token() != "",
+		"status":    "ok",
+		"version":   svc.Client().Version(),
+		"user":      svc.Client().Token() != "",
+		"libraries": libs,
 	})
 }
 

@@ -637,6 +637,7 @@ func (c *Client) buildItem(info map[string]interface{}) Item {
 	item.Backdrop = c.buildImgAPIURL(getString(info, "backdrops"))
 	// 详情API: logos(复数), 列表API无此字段
 	item.Logo = c.buildImgAPIURL(getString(info, "logos"))
+	item.CreateTime = getInt64(info, "create_time")
 	return item
 }
 
@@ -660,6 +661,20 @@ func getInt(m map[string]interface{}, key string) int {
 			return n
 		case int64:
 			return int(n)
+		}
+	}
+	return 0
+}
+
+func getInt64(m map[string]interface{}, key string) int64 {
+	if v, ok := m[key]; ok {
+		switch n := v.(type) {
+		case float64:
+			return int64(n)
+		case int:
+			return int64(n)
+		case int64:
+			return n
 		}
 	}
 	return 0

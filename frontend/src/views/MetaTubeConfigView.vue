@@ -1,103 +1,70 @@
 <template>
-  <a-card title="MetaTube 配置">
-    <a-form :model="form" layout="vertical" @finish="handleSave">
+  <a-form :model="form" layout="vertical" @finish="handleSave">
+    <a-card title="MetaTube 服务配置">
+
       <!-- 服务地址 -->
       <a-form-item label="服务地址" name="host" required>
-        <a-input
-          v-model:value="form.host"
-          placeholder="如 http://127.0.0.1:8081"
-          allow-clear
-        />
+        <a-input v-model:value="form.host" placeholder="如 http://127.0.0.1:8081" allow-clear />
       </a-form-item>
 
       <!-- Token -->
       <a-form-item label="API Token" name="token">
-        <a-input
-          v-model:value="form.token"
-          placeholder="MetaTube 服务端 Token（非必填）"
-          allow-clear
-        />
+        <a-input v-model:value="form.token" placeholder="MetaTube 服务端 Token（非必填）" allow-clear />
       </a-form-item>
-
-      <a-divider>翻译设置</a-divider>
-
+    </a-card>
+    <a-card title="翻译设置" style="margin-top: 16px">
       <!-- 翻译模式 -->
       <a-form-item label="翻译模式" name="translate_mode">
-        <a-select
-          v-model:value="form.translate_mode"
-          :options="translateModeOptions"
-          placeholder="选择翻译模式"
-          style="width: 200px"
-        />
+        <a-select v-model:value="form.translate_mode" :options="translateModeOptions" placeholder="选择翻译模式"
+          style="width: 200px" />
       </a-form-item>
 
       <!-- 翻译引擎 -->
       <a-form-item label="翻译引擎" name="translate_engine">
-        <a-select
-          v-model:value="form.translate_engine"
-          :options="translateEngineOptions"
-          placeholder="选择翻译引擎"
-          style="width: 200px"
-          @change="onEngineChange"
-        />
+        <a-select v-model:value="form.translate_engine" :options="translateEngineOptions" placeholder="选择翻译引擎"
+          style="width: 200px" @change="onEngineChange" />
       </a-form-item>
+    </a-card>
+    <!-- 引擎专属配置 -->
+    <a-card v-if="form.translate_engine === 'baidu'" title="百度翻译配置" style="margin-top: 16px">
+      <a-form-item label="APP ID" name="baidu_app_id">
+        <a-input v-model:value="engineConfig.baidu_app_id" placeholder="百度翻译 APP ID" allow-clear />
+      </a-form-item>
+      <a-form-item label="Secret Key" name="baidu_secret_key">
+        <a-input v-model:value="engineConfig.baidu_secret_key" placeholder="百度翻译 Secret Key" allow-clear />
+      </a-form-item>
+    </a-card>
+    <a-card v-if="form.translate_engine === 'deepl'" title="DeepL 配置" style="margin-top: 16px">
+      <a-form-item label="API Key" name="deepl_api_key">
+        <a-input v-model:value="engineConfig.deepl_api_key" placeholder="DeepL API Key" allow-clear />
+      </a-form-item>
+    </a-card>
+    <a-card v-if="form.translate_engine === 'google'" title="Google 翻译配置" style="margin-top: 16px">
+      <a-form-item label="API Key" name="google_api_key">
+        <a-input v-model:value="engineConfig.google_api_key" placeholder="Google Cloud Translation API Key"
+          allow-clear />
+      </a-form-item>
+    </a-card>
+    <a-card v-if="form.translate_engine === 'openai'" title="OpenAI 配置" style="margin-top: 16px">
+      <a-form-item label="API Key" name="openai_api_key">
+        <a-input v-model:value="engineConfig.openai_api_key" placeholder="OpenAI API Key" allow-clear />
+      </a-form-item>
+      <a-form-item label="模型" name="openai_model">
+        <a-input v-model:value="engineConfig.openai_model" placeholder="如 gpt-4o-mini" allow-clear />
+      </a-form-item>
+      <a-form-item label="Base URL" name="openai_base_url">
+        <a-input v-model:value="engineConfig.openai_base_url" placeholder="自定义 API 地址（可选）" allow-clear />
+      </a-form-item>
+    </a-card>
+    <a-space style="margin-top: 16px">
+      <a-button type="primary" html-type="submit" :loading="saving">保存配置</a-button>
+      <a-button :loading="testing" @click="handleTest">测试连接</a-button>
+    </a-space>
 
-      <!-- 引擎专属配置 -->
-      <template v-if="form.translate_engine === 'baidu'">
-        <a-divider>百度翻译配置</a-divider>
-        <a-form-item label="APP ID" name="baidu_app_id">
-          <a-input v-model:value="engineConfig.baidu_app_id" placeholder="百度翻译 APP ID" allow-clear />
-        </a-form-item>
-        <a-form-item label="Secret Key" name="baidu_secret_key">
-          <a-input v-model:value="engineConfig.baidu_secret_key" placeholder="百度翻译 Secret Key" allow-clear />
-        </a-form-item>
-      </template>
+    <a-alert v-if="testResult" style="margin-top: 16px" :type="testResult.success ? 'success' : 'error'"
+      :message="testResult.message" show-icon />
 
-      <template v-if="form.translate_engine === 'deepl'">
-        <a-divider>DeepL 配置</a-divider>
-        <a-form-item label="API Key" name="deepl_api_key">
-          <a-input v-model:value="engineConfig.deepl_api_key" placeholder="DeepL API Key" allow-clear />
-        </a-form-item>
-      </template>
-
-      <template v-if="form.translate_engine === 'google'">
-        <a-divider>Google 翻译配置</a-divider>
-        <a-form-item label="API Key" name="google_api_key">
-          <a-input v-model:value="engineConfig.google_api_key" placeholder="Google Cloud Translation API Key" allow-clear />
-        </a-form-item>
-      </template>
-
-      <template v-if="form.translate_engine === 'googlefree'">
-        <a-alert message="Google Free 无需额外配置，可直接使用" type="info" show-icon style="margin-bottom: 16px" />
-      </template>
-
-      <template v-if="form.translate_engine === 'openai'">
-        <a-divider>OpenAI 配置</a-divider>
-        <a-form-item label="API Key" name="openai_api_key">
-          <a-input v-model:value="engineConfig.openai_api_key" placeholder="OpenAI API Key" allow-clear />
-        </a-form-item>
-        <a-form-item label="模型" name="openai_model">
-          <a-input v-model:value="engineConfig.openai_model" placeholder="如 gpt-4o-mini" allow-clear />
-        </a-form-item>
-        <a-form-item label="Base URL" name="openai_base_url">
-          <a-input v-model:value="engineConfig.openai_base_url" placeholder="自定义 API 地址（可选）" allow-clear />
-        </a-form-item>
-      </template>
-
-      <a-space>
-        <a-button type="primary" html-type="submit" :loading="saving">保存配置</a-button>
-        <a-button :loading="testing" @click="handleTest">测试连接</a-button>
-      </a-space>
-    </a-form>
-
-    <a-alert
-      v-if="testResult"
-      style="margin-top: 16px"
-      :type="testResult.success ? 'success' : 'error'"
-      :message="testResult.message"
-      show-icon
-    />
-  </a-card>
+  </a-form>
 </template>
 
 <script setup lang="ts">

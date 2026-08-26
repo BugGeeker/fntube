@@ -43,7 +43,25 @@ func (h *ScrapeTaskHandler) list(ctx context.Context, c *app.RequestContext) {
 		c.JSON(500, map[string]string{"error": err.Error()})
 		return
 	}
-	c.JSON(200, tasks)
+
+	// 查询正在运行的任务 ID 集合
+	var runningTaskIDs []uint
+	h.db.Model(&model.TaskRunRecord{}).Where("status = ?", "running").Pluck("task_id", &runningTaskIDs)
+	runningSet := map[uint]bool{}
+	for _, id := range runningTaskIDs {
+		runningSet[id] = true
+	}
+
+	type TaskWithRunning struct {
+		model.ScrapeTask
+		IsRunning bool `json:"is_running"`
+	}
+	result := make([]TaskWithRunning, 0, len(tasks))
+	for _, t := range tasks {
+		result = append(result, TaskWithRunning{ScrapeTask: t, IsRunning: runningSet[t.ID]})
+	}
+
+	c.JSON(200, result)
 }
 
 // create 创建刮削计划任务
@@ -143,6 +161,14 @@ func (h *ScrapeTaskHandler) runNow(ctx context.Context, c *app.RequestContext) {
 	id, err := strconv.Atoi(idStr)
 	if err != nil || id <= 0 {
 		c.JSON(400, map[string]string{"error": "无效的 id"})
+		return
+	}
+
+	// 检查任务是否正在运行
+	var runningCount int64
+	h.db.Model(&model.TaskRunRecord{}).Where("task_id = ? AND status = ?", uint(id), "running").Count(&runningCount)
+	if runningCount > 0 {
+		c.JSON(409, map[string]string{"error": "任务正在运行中，请等待完成"})
 		return
 	}
 

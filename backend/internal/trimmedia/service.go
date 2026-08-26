@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 )
 
@@ -167,6 +168,7 @@ func (s *Service) Disconnect() {
 
 // GetLibraries 获取媒体服务器所有媒体库列表
 // hidden=true 时过滤掉被屏蔽的库
+// syncLibraries 为空或包含 "all" 时返回全部，否则仅返回同步列表中的媒体库
 func (s *Service) GetLibraries(hidden bool) ([]Library, error) {
 	if !s.IsAuthenticated() {
 		return nil, fmt.Errorf("not authenticated")
@@ -185,8 +187,24 @@ func (s *Service) GetLibraries(hidden bool) ([]Library, error) {
 	for _, lib := range list {
 		s.libraries[lib.GUID] = lib
 	}
-	libraries := make([]Library, 0, len(list))
-	for _, lib := range list {
+	// 按 syncLibraries 过滤；空或 ["all"] 表示全部
+	syncAll := len(s.syncLibraries) == 0 || contains(s.syncLibraries, "all")
+	var filtered []MediaDb
+	if syncAll {
+		filtered = list
+	} else {
+		idSet := make(map[string]bool, len(s.syncLibraries))
+		for _, id := range s.syncLibraries {
+			idSet[id] = true
+		}
+		for _, lib := range list {
+			if idSet[lib.GUID] {
+				filtered = append(filtered, lib)
+			}
+		}
+	}
+	libraries := make([]Library, 0, len(filtered))
+	for _, lib := range filtered {
 		// 类型映射
 		libType := "other"
 		switch lib.Category {
@@ -467,24 +485,46 @@ func (s *Service) GetResume(num int) ([]PlayItem, error) {
 }
 
 // GetLatest 获取最近更新列表
+// 遍历已选同步媒体库查询，合并后按 create_time 降序排序，取前 num 条
 func (s *Service) GetLatest(num int) ([]PlayItem, error) {
 	if !s.IsAuthenticated() {
 		return nil, fmt.Errorf("not authenticated")
+	}
+	// 确定需要查询的媒体库
+	libIDs := s.targetLibraryIDs()
+	if len(libIDs) == 0 {
+		return []PlayItem{}, nil
 	}
 	pageSize := num * 5
 	if pageSize < 100 {
 		pageSize = 100
 	}
-	items, _, err := s.client.ItemList("", []Type{TypeMovie, TypeTV}, true, 1, pageSize, "create_time", "DESC")
-	if err != nil {
-		return nil, err
+	types := []Type{TypeMovie, TypeTV, TypeVideo}
+	var merged []Item
+	for _, libID := range libIDs {
+		items, _, err := s.client.ItemList(libID, types, true, 1, pageSize, "create_time", "DESC")
+		if err != nil {
+			// 单个库查询失败跳过，继续查询其他库
+			continue
+		}
+		merged = append(merged, items...)
 	}
+	// 合并后按 create_time 降序排序
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].CreateTime > merged[j].CreateTime
+	})
+	// 去重（不同库可能存在相同的 item guid）
+	seen := make(map[string]bool, len(merged))
 	result := make([]PlayItem, 0, num)
-	for _, item := range items {
+	for _, item := range merged {
+		if seen[item.GUID] {
+			continue
+		}
+		seen[item.GUID] = true
+		result = append(result, s.buildPlayItem(item))
 		if num > 0 && len(result) >= num {
 			break
 		}
-		result = append(result, s.buildPlayItem(item))
 	}
 	return result, nil
 }
@@ -578,6 +618,24 @@ func (s *Service) matchLibraryByPath(path string) string {
 		}
 	}
 	return ""
+}
+
+// targetLibraryIDs 返回需要查询的媒体库 GUID 列表
+// syncLibraries 为空或包含 "all" 时返回所有已缓存的媒体库
+func (s *Service) targetLibraryIDs() []string {
+	if len(s.syncLibraries) == 0 || contains(s.syncLibraries, "all") {
+		ids := make([]string, 0, len(s.libraries))
+		for guid := range s.libraries {
+			ids = append(ids, guid)
+		}
+		return ids
+	}
+	return s.syncLibraries
+}
+
+// TargetLibraryIDs 导出版本，供外部包调用
+func (s *Service) TargetLibraryIDs() []string {
+	return s.targetLibraryIDs()
 }
 
 // buildMediaServerItem 从 Item 构造统一的媒体项

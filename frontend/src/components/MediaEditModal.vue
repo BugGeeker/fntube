@@ -159,6 +159,7 @@ import {
   type MediaItem,
 } from '@/api/trimmedia'
 import { translateText, type MetaTubeConfig, type MovieInfo } from '@/api/metatube'
+import { formatDateOnly } from '@/utils/format'
 
 const emit = defineEmits<{
   saved: []
@@ -197,16 +198,6 @@ const lastAirDateValue = computed({
 })
 
 // 将 ISO 日期（如 2026-08-06T00:00:00Z）格式化为 YYYY-MM-DD
-function formatDate(date: string): string {
-  if (!date) return ''
-  const d = new Date(date)
-  if (isNaN(d.getTime())) return date
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
 const open = async (item: MediaItem) => {
   currentItem.value = item
   editVisible.value = true
@@ -326,7 +317,7 @@ async function fillEditFormFromMovieInfo(info: MovieInfo) {
     editForm.value.content_rating = 'JP-18+'
   }
   if (!editForm.value.air_date_locked && info.release_date) {
-    editForm.value.air_date = formatDate(info.release_date)
+    editForm.value.air_date = formatDateOnly(info.release_date)
   }
   if (!editForm.value.posters_locked && (info.cover_url || info.big_cover_url || info.thumb_url)) {
     editForm.value.posters = info.big_cover_url || info.cover_url || info.thumb_url

@@ -133,6 +133,7 @@ type Item struct {
 	PlayItemGuid          string      `json:"play_item_guid"`
 	LogicType             int         `json:"logic_type"`
 	MediaStream           MediaStream `json:"media_stream"`
+	CreateTime            int64       `json:"create_time"` // 创建时间(秒)
 }
 
 // MediaStream 媒体流信息

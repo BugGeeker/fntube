@@ -30,16 +30,11 @@
           >
             <a-card hoverable size="small" @click="enterLibrary(lib)">
               <template #cover>
-                <img
-                  v-if="!uiStore.hideImages && lib.image_list && lib.image_list.length"
-                  :src="proxyImage(lib.image_list[0])"
-                  style="width: 100%; aspect-ratio: 2 / 3; object-fit: cover; display: block"
-                  alt="poster"
+                <MediaImage
+                  :src="lib.image_list?.[0]"
+                  :alt="lib.name"
+                  ratio="2 / 3"
                 />
-                <div v-else
-                  style="width: 100%; aspect-ratio: 2 / 3; display: flex; align-items: center; justify-content: center; background: #f0f0f0">
-                  <span style="color: #999; font-size: 32px">{{ lib.name.charAt(0) }}</span>
-                </div>
               </template>
               <a-card-meta :title="lib.name">
                 <template #description>
@@ -78,7 +73,7 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useTrimMediaStore } from '@/stores/trimmedia'
 import { useUiStore } from '@/stores/ui'
-import { proxyImage } from '@/utils/image'
+import MediaImage from '@/components/MediaImage.vue'
 import type { Library, MediaItem } from '@/api/trimmedia'
 
 const router = useRouter()

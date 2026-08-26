@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -91,6 +92,13 @@ func (s *Scheduler) checkAndRun() {
 				continue
 			}
 		}
+		// 检查任务是否正在运行，防止重复执行
+		var runningCount int64
+		s.db.Model(&model.TaskRunRecord{}).Where("task_id = ? AND status = ?", task.ID, "running").Count(&runningCount)
+		if runningCount > 0 {
+			log.Printf("[scheduler] 任务 %s 正在运行，跳过本次调度", task.Name)
+			continue
+		}
 		// 执行任务
 		go s.runTask(task.ID)
 	}
@@ -116,10 +124,10 @@ func (s *Scheduler) ScrapeSingle(itemGUID string) (string, error) {
 	// 读取 MetaTube 配置
 	var cfg struct {
 		Host            string
-		Token            string
+		Token           string
 		TranslateMode   string
-		TranslateEngine  string
-		EngineConfig     string
+		TranslateEngine string
+		EngineConfig    string
 	}
 	if err := s.db.Table("meta_tube_configs").Order("id desc").First(&cfg).Error; err != nil {
 		return "", fmt.Errorf("未配置 MetaTube")
@@ -139,18 +147,10 @@ func (s *Scheduler) ScrapeSingle(itemGUID string) (string, error) {
 	}
 
 	// 执行刮削
-	number, err := s.scrapeItem(*item, mtClient, cfg.TranslateMode, cfg.TranslateEngine, cfg.EngineConfig, genreMap)
+	number, err := s.scrapeItem(*item, mtClient, cfg.TranslateMode, cfg.TranslateEngine, cfg.EngineConfig, genreMap, model.ScrapeMethodManual, 0)
 	if err != nil {
 		return number, err
 	}
-
-	// 记录刮削日志（手动触发）
-	s.db.Create(&model.ScrapeLog{
-		ItemGUID: item.Guid,
-		Title:    item.Title,
-		Number:   number,
-		Method:   model.ScrapeMethodManual,
-	})
 
 	return number, nil
 }
@@ -169,14 +169,41 @@ func (s *Scheduler) runTask(taskID uint) error {
 
 	log.Printf("[scheduler] 开始执行刮削任务: %s (媒体库: %s)", task.Name, task.LibraryName)
 
+	// 创建运行记录
+	runRecord := model.TaskRunRecord{
+		TaskID:      task.ID,
+		TaskName:    task.Name,
+		LibraryName: task.LibraryName,
+		StartTime:   now,
+		Status:      "running",
+	}
+	s.db.Create(&runRecord)
+
+	// 记录运行结果到运行记录
+	finishRecord := func(successCount, completedCount, failedCount int64, status, errMsg string) {
+		endTime := time.Now()
+		s.db.Model(&runRecord).Updates(map[string]interface{}{
+			"end_time":        endTime,
+			"duration":        int64(endTime.Sub(now).Seconds()),
+			"success_count":   successCount,
+			"completed_count": completedCount,
+			"failed_count":    failedCount,
+			"status":          status,
+			"error":           errMsg,
+			"updated_at":      time.Now(),
+		})
+	}
+
 	// 检查飞牛服务是否可用
 	if s.service == nil || !s.service.IsAuthenticated() {
+		finishRecord(0, 0, 0, "error", "飞牛影视未连接")
 		return fmt.Errorf("飞牛影视未连接")
 	}
 
 	// 获取媒体库所有条目
 	items, _, err := s.service.GetItems(task.LibraryID, 0, -1)
 	if err != nil {
+		finishRecord(0, 0, 0, "error", "获取媒体列表失败: "+err.Error())
 		return fmt.Errorf("获取媒体列表失败: %w", err)
 	}
 
@@ -188,16 +215,18 @@ func (s *Scheduler) runTask(taskID uint) error {
 
 	// 读取 MetaTube 配置
 	var cfg struct {
-		Host           string
-		Token          string
-		TranslateMode  string
+		Host            string
+		Token           string
+		TranslateMode   string
 		TranslateEngine string
-		EngineConfig   string
+		EngineConfig    string
 	}
 	if err := s.db.Table("meta_tube_configs").Order("id desc").First(&cfg).Error; err != nil {
+		finishRecord(0, 0, 0, "error", "未配置 MetaTube")
 		return fmt.Errorf("未配置 MetaTube")
 	}
 	if cfg.Host == "" {
+		finishRecord(0, 0, 0, "error", "MetaTube 服务地址为空")
 		return fmt.Errorf("MetaTube 服务地址为空")
 	}
 
@@ -212,6 +241,7 @@ func (s *Scheduler) runTask(taskID uint) error {
 	}
 
 	scrapedCount := 0
+	failedCount := int64(0)
 	for _, item := range items {
 		// 跳过已刮削过的
 		if scrapedSet[item.Guid] {
@@ -220,31 +250,38 @@ func (s *Scheduler) runTask(taskID uint) error {
 
 		log.Printf("[scheduler] 刮削: %s (%s)", item.Title, item.Guid)
 
-		number, err := s.scrapeItem(item, mtClient, cfg.TranslateMode, cfg.TranslateEngine, cfg.EngineConfig, genreMap)
+		_, err := s.scrapeItem(item, mtClient, cfg.TranslateMode, cfg.TranslateEngine, cfg.EngineConfig, genreMap, model.ScrapeMethodAuto, runRecord.ID)
 		if err != nil {
 			log.Printf("[scheduler] 刮削失败 %s: %v", item.Title, err)
+			failedCount++
 			continue
 		}
-
-		// 记录刮削日志
-		s.db.Create(&model.ScrapeLog{
-			ItemGUID: item.Guid,
-			Title:    item.Title,
-			Number:   number,
-			Method:   model.ScrapeMethodAuto,
-		})
 
 		scrapedCount++
 	}
 
-	log.Printf("[scheduler] 刮削任务完成: %s, 共刮削 %d 项", task.Name, scrapedCount)
+	// 统计本次运行产生的成功和完成数量（通过 task_run_id 关联查询）
+	var successCount, completedCount int64
+	s.db.Model(&model.ScrapeLog{}).Where("task_run_id = ? AND status = ?", runRecord.ID, model.ScrapeStatusSuccess).Count(&successCount)
+	s.db.Model(&model.ScrapeLog{}).Where("task_run_id = ? AND status = ?", runRecord.ID, model.ScrapeStatusCompleted).Count(&completedCount)
+
+	log.Printf("[scheduler] 刮削任务完成: %s, 成功 %d, 完成 %d, 失败 %d", task.Name, successCount, completedCount, failedCount)
+
+	// 仅当刮削数量不为0时保留记录，否则删除
+	totalScraped := successCount + completedCount + failedCount
+	if totalScraped == 0 {
+		s.db.Delete(&runRecord)
+	} else {
+		finishRecord(successCount, completedCount, failedCount, "done", "")
+	}
+
 	return nil
 }
 
-// getScrapedItems 获取已刮削过的 item_guid 集合
+// getScrapedItems 获取已刮削完成/成功的 item_guid 集合（跳过失败和进行中的）
 func (s *Scheduler) getScrapedItems() (map[string]bool, error) {
 	var logs []model.ScrapeLog
-	if err := s.db.Select("DISTINCT item_guid").Find(&logs).Error; err != nil {
+	if err := s.db.Select("DISTINCT item_guid").Where("status IN ?", []string{model.ScrapeStatusCompleted, model.ScrapeStatusSuccess}).Find(&logs).Error; err != nil {
 		return nil, err
 	}
 	result := map[string]bool{}
@@ -255,27 +292,100 @@ func (s *Scheduler) getScrapedItems() (map[string]bool, error) {
 }
 
 // scrapeItem 对单个媒体项执行刮削，返回番号
-func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatube.Client, translateMode, translateEngine, engineConfig string, genreMap map[string]int) (string, error) {
+func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatube.Client, translateMode, translateEngine, engineConfig string, genreMap map[string]int, method string, taskRunID uint) (string, error) {
 	keyword := item.Title
 	if keyword == "" {
 		return "", fmt.Errorf("标题为空")
 	}
 
+	// 创建刮削日志记录（开始时记录）
+	logEntry := model.ScrapeLog{
+		ItemGUID:  item.Guid,
+		Title:     item.Title,
+		Method:    method,
+		TaskRunID: taskRunID,
+		Status:    model.ScrapeStatusInProgress,
+		Steps:     "[]",
+	}
+	s.db.Create(&logEntry)
+
+	// 辅助：记录步骤（同步骤名只保留一条，后调用覆盖前调用的状态）
+	stepRecords := []map[string]string{}
+	addStep := func(step, status, errMsg string) {
+		// 查找已有步骤，找到则更新，找不到则追加
+		found := false
+		for i := range stepRecords {
+			if stepRecords[i]["step"] == step {
+				stepRecords[i]["status"] = status
+				if errMsg != "" {
+					stepRecords[i]["error"] = errMsg
+				} else {
+					delete(stepRecords[i], "error")
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			entry := map[string]string{"step": step, "status": status}
+			if errMsg != "" {
+				entry["error"] = errMsg
+			}
+			stepRecords = append(stepRecords, entry)
+		}
+		stepsJSON, _ := json.Marshal(stepRecords)
+		s.db.Model(&logEntry).Updates(map[string]interface{}{
+			"steps":      string(stepsJSON),
+			"updated_at": time.Now(),
+		})
+	}
+	// 辅助：更新状态
+	updateStatus := func(status, errMsg string) {
+		updates := map[string]interface{}{
+			"status":     status,
+			"updated_at": time.Now(),
+		}
+		if errMsg != "" {
+			updates["error"] = errMsg
+		}
+		s.db.Model(&logEntry).Updates(updates)
+	}
+
 	// 1. 搜索 MetaTube
+	addStep(model.StepSearch, "running", "")
 	results, err := mtClient.SearchMovies(keyword)
 	if err != nil {
+		addStep(model.StepSearch, "failed", err.Error())
+		updateStatus(model.ScrapeStatusFailed, "搜索失败: "+err.Error())
 		return "", fmt.Errorf("搜索失败: %w", err)
 	}
 	if len(results) == 0 {
+		addStep(model.StepSearch, "failed", "未查询到影片")
+		updateStatus(model.ScrapeStatusFailed, "未查询到影片")
 		return "", fmt.Errorf("无搜索结果")
 	}
+	addStep(model.StepSearch, "success", "")
 	first := results[0]
 
 	// 2. 获取影片详情
+	addStep(model.StepGetDetail, "running", "")
 	info, err := mtClient.GetMovieInfo(first.Provider, first.ID)
 	if err != nil || info == nil {
+		errMsg := "获取详情失败"
+		if err != nil {
+			errMsg += ": " + err.Error()
+		}
+		addStep(model.StepGetDetail, "failed", errMsg)
+		updateStatus(model.ScrapeStatusFailed, errMsg)
 		return "", fmt.Errorf("获取详情失败: %w", err)
 	}
+	addStep(model.StepGetDetail, "success", "")
+
+	// 更新日志中的番号
+	s.db.Model(&logEntry).Updates(map[string]interface{}{
+		"number":     info.Number,
+		"updated_at": time.Now(),
+	})
 
 	// 3. 获取编辑信息
 	detail, err := s.service.GetEditDetail(item.Guid)
@@ -286,7 +396,7 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 	// 4. 填入编辑信息（仅覆盖未锁定字段）
 	fillEditDetail(detail, info, genreMap)
 
-	// 5. 下载并上传图片
+	// 5. 下载并上传图片（不阻塞后续流程）
 	if !detail.PostersLocked && (info.CoverURL != "" || info.BigCoverURL != "" || info.ThumbURL != "") {
 		posterURL := info.BigCoverURL
 		if posterURL == "" {
@@ -295,8 +405,12 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 		if posterURL == "" {
 			posterURL = info.ThumbURL
 		}
+		addStep(model.StepDownloadPoster, "running", "")
 		if path, err := s.downloadAndUploadImage(posterURL, "poster"); err == nil {
 			detail.Posters = path
+			addStep(model.StepDownloadPoster, "success", "")
+		} else {
+			addStep(model.StepDownloadPoster, "failed", err.Error())
 		}
 	}
 	if !detail.BackdropsLocked && (info.ThumbURL != "" || info.BigThumbURL != "") {
@@ -304,23 +418,54 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 		if backdropURL == "" {
 			backdropURL = info.ThumbURL
 		}
+		addStep(model.StepDownloadBackdrop, "running", "")
 		if path, err := s.downloadAndUploadImage(backdropURL, "backdrop"); err == nil {
 			detail.Backdrops = path
+			addStep(model.StepDownloadBackdrop, "success", "")
+		} else {
+			addStep(model.StepDownloadBackdrop, "failed", err.Error())
 		}
 	}
 
-	// 6. 处理演职员
+	// 6. 处理演职员（不阻塞后续流程）
 	if !detail.CreditsLocked && len(info.Actors) > 0 {
-		s.fillCredits(detail, info.Actors)
+		addStep(model.StepSearchActor, "running", "")
+		if err := s.fillCredits(detail, info.Actors); err == nil {
+			addStep(model.StepSearchActor, "success", "")
+		} else {
+			addStep(model.StepSearchActor, "failed", err.Error())
+		}
 	}
 
-	// 7. 翻译
-	s.applyTranslation(detail, info, mtClient, translateMode, translateEngine, engineConfig)
+	// 7. 翻译（不阻塞后续流程）
+	if translateMode != "" && translateMode != "none" {
+		addStep(model.StepTranslate, "running", "")
+		if err := s.applyTranslation(detail, info, mtClient, translateMode, translateEngine, engineConfig); err == nil {
+			addStep(model.StepTranslate, "success", "")
+		} else {
+			addStep(model.StepTranslate, "failed", err.Error())
+		}
+	}
 
 	// 8. 保存
 	_, err = s.service.SaveEditDetail(detail)
 	if err != nil {
+		updateStatus(model.ScrapeStatusFailed, "保存失败: "+err.Error())
 		return info.Number, fmt.Errorf("保存失败: %w", err)
+	}
+
+	// 保存成功 → 根据步骤结果标记状态：全部成功为"成功"，有非阻塞失败为"完成"
+	hasFailedStep := false
+	for _, step := range stepRecords {
+		if step["status"] == "failed" {
+			hasFailedStep = true
+			break
+		}
+	}
+	if hasFailedStep {
+		updateStatus(model.ScrapeStatusCompleted, "")
+	} else {
+		updateStatus(model.ScrapeStatusSuccess, "")
 	}
 
 	return info.Number, nil
@@ -359,9 +504,10 @@ func fillEditDetail(detail *trimmedia.EditDetail, info *metatube.MovieInfo, genr
 	}
 }
 
-// fillCredits 填入演职员信息
-func (s *Scheduler) fillCredits(detail *trimmedia.EditDetail, actors []string) {
+// fillCredits 填入演职员信息，返回错误（不阻塞，仅记录）
+func (s *Scheduler) fillCredits(detail *trimmedia.EditDetail, actors []string) error {
 	credits := make([]trimmedia.EditCredit, 0, len(actors))
+	failed := 0
 	for idx, name := range actors {
 		credit := trimmedia.EditCredit{
 			Name:  name,
@@ -382,11 +528,17 @@ func (s *Scheduler) fillCredits(detail *trimmedia.EditDetail, actors []string) {
 			if err == nil {
 				credit.PersonGUID = guid
 				credit.ProfilePath = profilePath
+			} else {
+				failed++
 			}
 		}
 		credits = append(credits, credit)
 	}
 	detail.Credits = credits
+	if failed > 0 {
+		return fmt.Errorf("%d 名演员导入失败", failed)
+	}
+	return nil
 }
 
 // importPerson 通过 MetaTube 搜索演员并导入飞牛
@@ -441,25 +593,38 @@ func (s *Scheduler) importPerson(name string) (string, string, error) {
 	return guid, profilePath, nil
 }
 
-// applyTranslation 根据翻译配置翻译标题和简介
-func (s *Scheduler) applyTranslation(detail *trimmedia.EditDetail, info *metatube.MovieInfo, mtClient *metatube.Client, mode, engine, engineConfig string) {
+// applyTranslation 根据翻译配置翻译标题和简介，返回错误（不阻塞，仅记录）
+func (s *Scheduler) applyTranslation(detail *trimmedia.EditDetail, info *metatube.MovieInfo, mtClient *metatube.Client, mode, engine, engineConfig string) error {
 	if mode == "" || mode == "none" {
-		return
+		return nil
 	}
 
 	shouldTranslateTitle := mode == "title" || mode == "title_and_summary"
 	shouldTranslateOverview := mode == "summary" || mode == "title_and_summary"
 
+	var errs []string
+
 	if shouldTranslateTitle && !detail.TitleLocked && info.Title != "" {
-		if result, err := mtClient.Translate(info.Title, "", "zh-CN", engine, engineConfig); err == nil && result != nil {
+		result, err := mtClient.Translate(info.Title, "", "zh-CN", engine, engineConfig)
+		if err == nil && result != nil {
 			detail.Title = info.Number + " " + result.TranslatedText
+		} else if err != nil {
+			errs = append(errs, "标题翻译失败: "+err.Error())
 		}
 	}
 	if shouldTranslateOverview && !detail.OverviewLocked && info.Summary != "" {
-		if result, err := mtClient.Translate(info.Summary, "", "zh-CN", engine, engineConfig); err == nil && result != nil {
+		result, err := mtClient.Translate(info.Summary, "", "zh-CN", engine, engineConfig)
+		if err == nil && result != nil {
 			detail.Overview = result.TranslatedText
+		} else if err != nil {
+			errs = append(errs, "简介翻译失败: "+err.Error())
 		}
 	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf(strings.Join(errs, "; "))
+	}
+	return nil
 }
 
 // downloadAndUploadImage 下载网络图片并上传到飞牛

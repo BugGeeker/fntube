@@ -9,13 +9,9 @@
           :md="8">
           <a-card hoverable size="small" style="overflow: hidden" @click="handleResultClick(result)">
             <template #cover>
-              <img v-if="!uiStore.hideImages && (result.thumb_url || result.cover_url)"
-                :src="result.thumb_url || result.cover_url" style="height: 200px; width: 100%; object-fit: cover"
-                alt="cover" />
-              <div v-else
-                style="height: 200px; display: flex; align-items: center; justify-content: center; background: #f5f5f5">
-                <span style="color: #999; font-size: 24px">{{ result.number?.charAt(0) || '?' }}</span>
-              </div>
+              <MediaImage :src="result.thumb_url || result.cover_url" alt="cover" :fallback="result.cover_url"
+                ratio="2/3" />
+
             </template>
             <a-card-meta>
               <template #title>
@@ -26,13 +22,12 @@
                 <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px">{{
                   result.title }}</div>
                 <a-space size="small" wrap>
-                  <a-tag v-if="result.release_date">{{ formatDate(result.release_date) }}</a-tag>
+                  <a-tag v-if="result.release_date">{{ formatDateOnly(result.release_date) }}</a-tag>
                   <a-tag v-if="result.score" color="orange">评分 {{ result.score }}</a-tag>
                 </a-space>
               </template>
             </a-card-meta>
-            <div v-if="result.actors && result.actors.length > 0"
-              style="margin-top: 8px; font-size: 12px; color: #999">
+            <div v-if="result.actors && result.actors.length > 0" style="margin-top: 8px; font-size: 12px; color: #999">
               演员: {{ result.actors.join('、') }}
             </div>
           </a-card>
@@ -46,8 +41,9 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useMetaTubeStore } from '@/stores/metatube'
-import { useUiStore } from '@/stores/ui'
 import { type MovieSearchResult, type MovieInfo } from '@/api/metatube'
+import { formatDateOnly } from '@/utils/format'
+import MediaImage from './MediaImage.vue'
 
 const emit = defineEmits<{
   /** 选中搜索结果并获取到影片详情后触发 */
@@ -55,7 +51,6 @@ const emit = defineEmits<{
 }>()
 
 const metaTubeStore = useMetaTubeStore()
-const uiStore = useUiStore()
 
 const visible = ref(false)
 const searching = ref(false)
@@ -70,17 +65,6 @@ function open(val: string) {
 defineExpose({
   open,
 })
-
-// 将 ISO 日期（如 2026-08-06T00:00:00Z）格式化为 YYYY-MM-DD
-function formatDate(date: string): string {
-  if (!date) return ''
-  const d = new Date(date)
-  if (isNaN(d.getTime())) return date
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
 
 async function doSearch() {
   if (!keyword.value) {
