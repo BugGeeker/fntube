@@ -105,6 +105,7 @@
       </a-space>
     </template>
   </a-modal>
+  <MediaEditModal ref="editModalRef" @saved="handleSaved" />
 </template>
 
 <script setup lang="ts">
@@ -115,9 +116,14 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { rescrapeItem } from '@/api/scrapelog'
 
+import MediaEditModal from './MediaEditModal.vue'
+
 import { EditOutlined, ThunderboltOutlined, PlayCircleOutlined } from '@ant-design/icons-vue'
 
 const uiStore = useUiStore()
+
+const editModalRef = ref<typeof MediaEditModal>()
+
 
 const visible = ref(false)
 const loading = ref(false)
@@ -131,10 +137,6 @@ const episodes = ref<Season[]>([])
 const guid = ref('')
 const item = ref<MediaItem | null>(null)
 
-const emit = defineEmits<{
-  edit: [item: MediaItem]
-}>()
-
 function itemYear(item: MediaItem): string {
   const date = item.release_date || item.air_date || ''
   return date.slice(0, 4)
@@ -142,8 +144,15 @@ function itemYear(item: MediaItem): string {
 
 // 编辑：触发编辑事件
 function handleEdit(item: MediaItem) {
-  emit('edit', item)
+  editModalRef.value?.open(item)
 }
+
+// 编辑：刷新详情
+function handleSaved() {
+  loadItem()
+}
+
+
 
 const open = async (val: string) => {
   item.value = null

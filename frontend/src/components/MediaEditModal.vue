@@ -2,7 +2,7 @@
   <!-- 编辑弹窗 -->
   <a-modal v-model:open="editVisible" width="900px" title="编辑媒体信息"
     :body-style="{ maxHeight: '80vh', minHeight: '600px', overflow: 'auto' }">
-    <a-spin :spinning="editLoading">
+    <a-spin :spinning="editLoading" style="min-height: 600px; width: 100%">
       <a-form v-if="editForm" layout="vertical">
         <a-form-item label="海报">
           <a-flex gap="middle" align="center">
@@ -121,7 +121,7 @@
     <template #footer>
       <a-space>
         <a-button @click="editVisible = false">取消</a-button>
-        <a-button :loading="searching" @click="handleSearch">
+        <a-button @click="handleSearch">
           <template #icon>
             <SearchOutlined />
           </template>
@@ -133,46 +133,7 @@
   </a-modal>
 
   <!-- MetaTube 搜索结果弹窗 -->
-  <a-modal v-model:open="searchVisible" width="800px" title="MetaTube 搜索结果" :footer="null"
-    :body-style="{ maxHeight: '70vh', minHeight: '400px', overflow: 'auto' }">
-    <a-spin :spinning="searching">
-      <a-empty v-if="!searching && metaTubeStore.searchResults.length === 0" description="无搜索结果" />
-      <a-row :gutter="[16, 16]">
-        <a-col v-for="result in metaTubeStore.searchResults" :key="result.id + result.provider" :xs="24" :sm="12"
-          :md="8">
-          <a-card hoverable size="small" style="overflow: hidden" @click="handleSearchResultClick(result)">
-            <template #cover>
-              <img v-if="!uiStore.hideImages && (result.thumb_url || result.cover_url)"
-                :src="result.thumb_url || result.cover_url" style="height: 200px; width: 100%; object-fit: cover"
-                alt="cover" />
-              <div v-else
-                style="height: 200px; display: flex; align-items: center; justify-content: center; background: #f5f5f5">
-                <span style="color: #999; font-size: 24px">{{ result.number?.charAt(0) || '?' }}</span>
-              </div>
-            </template>
-            <a-card-meta>
-              <template #title>
-                <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><a-tag
-                    v-if="result.provider" color="blue">{{ result.provider }}</a-tag>{{ result.number }}</div>
-              </template>
-              <template #description>
-                <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px">{{
-                  result.title }}</div>
-                <a-space size="small" wrap>
-                  <a-tag v-if="result.release_date">{{ formatDate(result.release_date) }}</a-tag>
-                  <a-tag v-if="result.score" color="orange">评分 {{ result.score }}</a-tag>
-                </a-space>
-              </template>
-            </a-card-meta>
-            <div v-if="result.actors && result.actors.length > 0"
-              style="margin-top: 8px; font-size: 12px; color: #999">
-              演员: {{ result.actors.join('、') }}
-            </div>
-          </a-card>
-        </a-col>
-      </a-row>
-    </a-spin>
-  </a-modal>
+  <MetaTubeSearchModal ref="searchModal" @select="handleSearchSelect" />
 </template>
 
 <script setup lang="ts">
@@ -180,8 +141,8 @@ import { ref, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import { SearchOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { useMetaTubeStore } from '@/stores/metatube'
-import { useUiStore } from '@/stores/ui'
 import LockButton from '@/components/LockButton.vue'
+import MetaTubeSearchModal from '@/components/MetaTubeSearchModal.vue'
 import {
   getEditDetail,
   saveEditDetail,
@@ -197,16 +158,16 @@ import {
   type Country,
   type MediaItem,
 } from '@/api/trimmedia'
-import { type MovieSearchResult, translateText, type MetaTubeConfig } from '@/api/metatube'
+import { translateText, type MetaTubeConfig, type MovieInfo } from '@/api/metatube'
 
 const emit = defineEmits<{
   saved: []
 }>()
 
 const metaTubeStore = useMetaTubeStore()
-const uiStore = useUiStore()
+const searchModal = ref<typeof MetaTubeSearchModal>()
 
-// 编辑相关
+//// 编辑相关
 const editVisible = ref(false)
 const editLoading = ref(false)
 const editSaving = ref(false)
@@ -219,7 +180,7 @@ const countriesLoading = ref(false)
 
 // 搜索相关
 const searchVisible = ref(false)
-const searching = ref(false)
+const searchKeyword = ref('')
 
 // 翻译状态
 const translatingTitle = ref(false)
@@ -334,42 +295,22 @@ async function handleSearch() {
     message.warning('无法获取搜索关键词')
     return
   }
-  metaTubeStore.searchResults = []
-  searchVisible.value = true
-  searching.value = true
-  try {
-    await metaTubeStore.searchMoviesData(keyword)
-  } catch {
-    message.error('MetaTube 搜索失败')
-  } finally {
-    searching.value = false
-  }
+  searchModal.value?.open(keyword)
 }
 
-// 点击搜索结果卡片：调用影片详情接口并填入编辑弹窗
-async function handleSearchResultClick(result: MovieSearchResult) {
+// 选中搜索结果后，将影片详情填入编辑弹窗
+async function handleSearchSelect(info: MovieInfo) {
   if (!editForm.value) return
-  searching.value = true
   try {
-    const info = await metaTubeStore.fetchMovieDetail(result.provider, result.id)
-    if (!info) {
-      message.warning('未获取到影片详情')
-      return
-    }
-    // 将 MetaTube 影片信息填入编辑表单（仅覆盖未锁定字段）
     await fillEditFormFromMovieInfo(info)
     message.success('已填入影片信息')
-    searchVisible.value = false
-
   } catch {
-    message.error('获取影片详情失败')
-  } finally {
-    searching.value = false
+    message.error('填入影片信息失败')
   }
 }
 
 // 将 MetaTube 影片信息填入编辑表单的核心逻辑（抽取以便复用）
-async function fillEditFormFromMovieInfo(info: NonNullable<Awaited<ReturnType<typeof metaTubeStore.fetchMovieDetail>>>) {
+async function fillEditFormFromMovieInfo(info: MovieInfo) {
   if (!editForm.value) return
   // 将 MetaTube 影片信息填入编辑表单（仅覆盖未锁定字段）
   if (!editForm.value.title_locked && info.number) {
