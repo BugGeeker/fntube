@@ -4,37 +4,21 @@
     <a-card title="媒体库">
       <template #extra>
         <a-space>
-          <a-input-search
-            v-model:value="searchKeyword"
-            placeholder="搜索媒体"
-            enter-button="搜索"
-            style="width: 300px"
-            @search="handleSearch"
-          />
-          <a-tooltip :title="uiStore.hideImages ? '当前已隐藏图片，点击显示图片' : '点击隐藏所有图片'">
-            <a-switch
-              v-model:checked="hideImagesChecked"
-              checked-children="隐图"
-              un-checked-children="显图"
-            />
-          </a-tooltip>
-          <a-button @click="handleRefresh">刷新媒体库</a-button>
+          <a-input-search v-model:value="searchKeyword" placeholder="搜索媒体" enter-button="搜索" style="width: 300px"
+            @search="handleSearch" />
+          <a-button @click="handleRefresh">
+            <template #icon>
+              <ReloadOutlined />
+            </template>
+          </a-button>
         </a-space>
       </template>
       <a-spin :spinning="store.loading">
         <a-row :gutter="[16, 16]">
-          <a-col
-            v-for="lib in store.libraries"
-            :key="lib.id"
-            :xs="24" :sm="12" :md="8" :lg="6" :xl="4"
-          >
+          <a-col v-for="lib in store.libraries" :key="lib.id" :xs="24" :sm="12" :md="8" :lg="6" :xl="4">
             <a-card hoverable size="small" @click="enterLibrary(lib)">
               <template #cover>
-                <MediaImage
-                  :src="lib.image_list?.[0]"
-                  :alt="lib.name"
-                  ratio="2 / 3"
-                />
+                <MediaImage :src="lib.image_list?.[0]" :alt="lib.name" ratio="2 / 3" />
               </template>
               <a-card-meta :title="lib.name">
                 <template #description>
@@ -68,23 +52,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useTrimMediaStore } from '@/stores/trimmedia'
-import { useUiStore } from '@/stores/ui'
 import MediaImage from '@/components/MediaImage.vue'
 import type { Library, MediaItem } from '@/api/trimmedia'
+import { ReloadOutlined } from '@ant-design/icons-vue'
 
 const router = useRouter()
 const store = useTrimMediaStore()
-const uiStore = useUiStore()
-
-// 双向绑定到全局 store 的 hideImages，全局生效
-const hideImagesChecked = computed({
-  get: () => uiStore.hideImages,
-  set: (val: boolean) => uiStore.setHideImages(val),
-})
 
 const searchVisible = ref(false)
 const searchKeyword = ref('')
@@ -123,12 +100,9 @@ async function handleSearch() {
 }
 
 async function handleRefresh() {
-  const ok = await store.refresh().catch(() => false)
-  if (ok) {
-    message.success('已触发刷新媒体库')
-  } else {
-    message.error('刷新失败，可能需要管理员权限')
-  }
+  store.fetchLibraries().catch(() => {
+    message.warning('未连接到飞牛影视，请先配置')
+  })
 }
 </script>
 
@@ -136,16 +110,20 @@ async function handleRefresh() {
 :deep(.ant-col) {
   min-width: 0;
 }
+
 :deep(.ant-card-body) {
   overflow: hidden;
 }
+
 :deep(.ant-card-meta) {
   min-width: 0;
 }
+
 :deep(.ant-card-meta-detail) {
   min-width: 0;
   overflow: hidden;
 }
+
 :deep(.ant-card-meta-title) {
   white-space: nowrap;
   overflow: hidden;

@@ -600,6 +600,17 @@ func (s *Service) Search(keyword string) ([]MediaServerItem, error) {
 	return result, nil
 }
 
+// GetStreamList 获取媒体文件/视频/音频/字幕流信息
+func (s *Service) GetStreamList(itemID string) (*StreamListResult, error) {
+	if !s.IsAuthenticated() {
+		return nil, fmt.Errorf("not authenticated")
+	}
+	if s.client == nil {
+		return nil, fmt.Errorf("no client")
+	}
+	return s.client.StreamList(itemID)
+}
+
 // matchLibraryByPath 按路径匹配媒体库
 func (s *Service) matchLibraryByPath(path string) string {
 	if path == "" {

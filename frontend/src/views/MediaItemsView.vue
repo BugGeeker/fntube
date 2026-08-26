@@ -3,15 +3,22 @@
     <!-- 媒体条目列表 -->
     <a-card :title="libraryName || '加载中...'">
       <template #extra>
-        <a-button @click="backToLibraries">返回媒体库</a-button>
+        <a-space>
+          <a-button @click="backToLibraries">返回媒体库</a-button>
+          <a-button @click="handleRefresh">
+            <template #icon>
+              <ReloadOutlined />
+            </template>
+          </a-button>
+        </a-space>
       </template>
       <a-spin :spinning="store.loading">
         <a-row :gutter="[16, 16]">
-          <a-col v-for="item in store.items" :key="item.guid" :xs="24" :sm="12" :md="8" :lg="8" :xl="6" :xxl="4">
+          <a-col v-for="item in store.items" :key="item.guid" :xs="24" :sm="12" :md="8" :lg="6" :xl="4" :xxl="3">
             <a-card hoverable size="small" @click="showDetail(item)" class="media-card">
               <template #cover>
                 <div style="position: relative;">
-                  <MediaImage :src="proxyImage(item.poster)" :alt="item.title" ratio="2 / 3" />
+                  <MediaImage :src="item.poster" :alt="item.title" ratio="2 / 3" />
 
                   <div class="card-actions" @click.stop">
                     <a-button size="medium" shape="circle" @click.stop="handleCardEdit(item)" title="播放">
@@ -72,19 +79,17 @@ import { message } from 'ant-design-vue'
 import { EditOutlined, ThunderboltOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
 import { useTrimMediaStore } from '@/stores/trimmedia'
 import { useMetaTubeStore } from '@/stores/metatube'
-import { useUiStore } from '@/stores/ui'
 import MediaDetailModal from '@/components/MediaDetailModal.vue'
 import MediaEditModal from '@/components/MediaEditModal.vue'
-import { proxyImage } from '@/utils/image'
 import { rescrapeItem } from '@/api/scrapelog'
 import MediaImage from '@/components/MediaImage.vue'
 import type { MediaItem } from '@/api/trimmedia'
+import { ReloadOutlined } from '@ant-design/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 const store = useTrimMediaStore()
 const metaTubeStore = useMetaTubeStore()
-const uiStore = useUiStore()
 
 const mediaDetailModelRef = ref<typeof MediaDetailModal>()
 const editModalRef = ref<typeof MediaEditModal>()
@@ -129,6 +134,11 @@ onMounted(async () => {
   currentPage.value = 1
   await loadItems()
 })
+
+// 刷新列表
+function handleRefresh() {
+  loadItems()
+}
 
 function backToLibraries() {
   router.push('/media')

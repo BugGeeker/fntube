@@ -184,6 +184,94 @@ export interface EditDetail {
   content_rating_opts: string[]
 }
 
+// 媒体文件信息
+export interface MediaFileInfo {
+  guid: string
+  path: string
+  file_name: string
+  size: number
+  timestamp: number
+  type: number
+  sort_num: number
+  can_play: number
+  play_error: string
+  create_time: number
+  update_time: number
+  parent_fv_guid: string
+  file_birth_time: number
+  progress_thumb_hash_dir: string
+}
+
+// 视频流信息
+export interface VideoStreamInfo {
+  media_guid: string
+  title: string
+  guid: string
+  resolution_type: string
+  color_range_type: string
+  codec_name: string
+  codec_type: string
+  color_range: string
+  profile: string
+  index: number
+  width: number
+  height: number
+  coded_width: number
+  coded_height: number
+  display_aspect_ratio: string
+  pix_fmt: string
+  level: string
+  color_space: string
+  color_transfer: string
+  color_primaries: string
+  duration: number
+  dv_profile: number
+  refs: number
+  r_frame_rate: string
+  avg_frame_rate: string
+  bits_per_raw_sample: string
+  bps: number
+  progressive: number
+  bit_depth: number
+  wrapper: string
+  create_time: number
+  update_time: number
+  rotation: number
+  ext1: number
+  is_bluray: boolean
+}
+
+// 音频流信息
+export interface AudioStreamInfo {
+  media_guid: string
+  title: string
+  guid: string
+  audio_type: string
+  codec_name: string
+  codec_type: string
+  language: string
+  channels: number
+  profile: string
+  sample_rate: string
+  is_default: number
+  channel_layout: string
+  duration: number
+  index: number
+  bits_per_raw_sample: string
+  bps: number
+  create_time: number
+  update_time: number
+  is_fake: boolean
+}
+
+// 媒体流信息列表
+export interface StreamListResult {
+  files: MediaFileInfo[]
+  video_streams: VideoStreamInfo[]
+  audio_streams: AudioStreamInfo[]
+  subtitle_streams: string[]
+}
+
 // --- 配置 ---
 
 export const getConfig = () => request.get<TrimMediaConfig>('/trimmedia/config')
@@ -299,3 +387,8 @@ export const refreshLibraries = (paths?: string[]) =>
 
 export const searchMedia = (q: string) =>
   request.get<MediaItem[]>('/trimmedia/search', { params: { q } })
+
+// --- 媒体流信息 ---
+
+export const getStreamList = (itemId: string) =>
+  request.get<StreamListResult>(`/trimmedia/stream/${itemId}`)

@@ -621,6 +621,23 @@ func (c *Client) SaveEditDetail(detail *EditDetail) (bool, error) {
 	return true, nil
 }
 
+// StreamList 查询媒体文件/视频/音频/字幕流信息
+func (c *Client) StreamList(guid string) (*StreamListResult, error) {
+	res, err := c.request(fmt.Sprintf("/stream/list/%s", guid), "GET", nil, nil, "", false)
+	if err != nil || !res.Success() {
+		return nil, fmt.Errorf("stream list failed: %v", err)
+	}
+	if res.Data == nil {
+		return &StreamListResult{}, nil
+	}
+	result := &StreamListResult{}
+	b, _ := json.Marshal(res.DataMap())
+	if err := json.Unmarshal(b, result); err != nil {
+		return nil, fmt.Errorf("unmarshal stream list: %w", err)
+	}
+	return result, nil
+}
+
 // buildItem 从 map 构造 Item
 func (c *Client) buildItem(info map[string]interface{}) Item {
 	item := Item{}

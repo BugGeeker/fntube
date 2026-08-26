@@ -1,10 +1,9 @@
 <template>
-  <a-image
+  <img
     v-if="src && !uiStore.hideImages"
     :src="proxyImage(src)"
     class="media-image"
     :alt="alt"
-    :ratio="ratio"
   />
   <div v-else class="media-image media-image-placeholder">
     <span class="media-image-placeholder-text">{{ fallbackText }}</span>
@@ -15,6 +14,7 @@
 import { computed } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { proxyImage } from '@/utils/image'
+import { theme } from 'ant-design-vue'
 
 const props = withDefaults(defineProps<{
   src?: string | null
@@ -22,8 +22,6 @@ const props = withDefaults(defineProps<{
   ratio?: string
   fallback?: string
   fit?: string
-  placeholderBg?: string
-  placeholderColor?: string
   placeholderFontSize?: string
   borderRadius?: string
 }>(), {
@@ -31,13 +29,13 @@ const props = withDefaults(defineProps<{
   ratio: '2 / 3',
   fallback: '',
   fit: 'cover',
-  placeholderBg: '#f0f0f0',
-  placeholderColor: '#999',
-  placeholderFontSize: '32px',
+  placeholderFontSize: '24px',
   borderRadius: '8px',
 })
 
 const uiStore = useUiStore()
+
+const { token } = theme.useToken()
 
 const fallbackText = computed(() => {
   if (props.fallback) return props.fallback
@@ -58,12 +56,12 @@ const fallbackText = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: v-bind('props.placeholderBg');
+  background: v-bind('token.colorBorderSecondary');
 }
 
 .media-image-placeholder-text {
   padding: 0 12px;
-  color: v-bind('props.placeholderColor');
+  color: v-bind('token.colorTextTertiary');
   font-size: v-bind('props.placeholderFontSize');
   white-space: nowrap;
   overflow: hidden;

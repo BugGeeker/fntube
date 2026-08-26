@@ -9,7 +9,7 @@
           :md="8">
           <a-card hoverable size="small" style="overflow: hidden" @click="handleResultClick(result)">
             <template #cover>
-              <MediaImage :src="result.thumb_url || result.cover_url" alt="cover" :fallback="result.cover_url"
+              <MediaImage :src="result.thumb_url || result.cover_url" alt="cover" :fallback="result.number"
                 ratio="2/3" />
 
             </template>

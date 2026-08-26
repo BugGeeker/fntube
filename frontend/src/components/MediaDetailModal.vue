@@ -1,18 +1,18 @@
 <template>
   <a-modal v-model:open="visible" width="1000px" :title="item?.title || '详情'"
     :body-style="{ maxHeight: '80vh', minHeight: '600px', overflow: 'auto' }">
-    <a-spin :spinning="loading">
+    <a-spin :spinning="loading" style="min-height: '600px'; width: 100%;">
       <template v-if="item">
         <!-- 顶部图片横向布局 -->
         <div style="display: flex; gap: 12px; margin-bottom: 16px;">
           <div style="flex: 1; min-width: 0;">
-            <MediaImage :src="proxyImage(item.poster)" ratio="3/2" />
+            <MediaImage :src="item.poster" ratio="3/2" alt="封面"/>
           </div>
           <div style="flex: 1; min-width: 0;">
-            <MediaImage :src="proxyImage(item.backdrop)" ratio="3/2" />
+            <MediaImage :src="item.backdrop" ratio="3/2" alt="背景"/>
           </div>
           <div style="flex: 1; min-width: 0;">
-            <MediaImage :src="proxyImage(item.logo)" ratio="3/2" />
+            <MediaImage :src="item.logo" ratio="3/2" alt="logo"/>
           </div>
         </div>
 
@@ -39,7 +39,7 @@
             <a-list-item v-for="p in persons" :key="p.person_guid">
               <a-list-item-meta>
                 <template #avatar>
-                  <a-avatar v-if="!uiStore.hideImages && p.profile_path" :src="proxyImage(p.profile_path)" :size="40" />
+                  <a-avatar v-if="p.profile_path" :src="proxyImage(p.profile_path)" :size="40" />
                   <a-avatar v-else :size="40">{{ p.name?.charAt(0) || '?' }}</a-avatar>
                 </template>
                 <template #title>
@@ -76,6 +76,107 @@
             </a-list-item>
           </a-list>
         </div>
+
+        <!-- 媒体文件信息 -->
+        <div v-if="streamInfo" style="margin-top: 16px">
+          <h4>媒体文件</h4>
+          <a-table
+            :dataSource="streamInfo.files"
+            :columns="fileColumns"
+            rowKey="guid"
+            size="small"
+            :pagination="false"
+            bordered
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'size'">
+                {{ formatFileSize(record.size) }}
+              </template>
+              <template v-if="column.key === 'path'">
+                <a-tooltip :title="record.path">
+                  <span style="font-family: monospace; font-size: 12px">{{ record.path }}</span>
+                </a-tooltip>
+              </template>
+              <template v-if="column.key === 'can_play'">
+                <a-tag v-if="record.can_play === 1" color="green">可播放</a-tag>
+                <a-tag v-else color="red">不可播放</a-tag>
+              </template>
+            </template>
+          </a-table>
+        </div>
+
+        <!-- 视频流信息 -->
+        <div v-if="streamInfo && streamInfo.video_streams.length > 0" style="margin-top: 16px">
+          <h4>视频流</h4>
+          <a-table
+            :dataSource="streamInfo.video_streams"
+            :columns="videoColumns"
+            rowKey="guid"
+            size="small"
+            :pagination="false"
+            bordered
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'resolution'">
+                {{ record.width }}×{{ record.height }}
+              </template>
+              <template v-if="column.key === 'resolution_type'">
+                <a-tag :color="getResolutionColor(record.resolution_type)">{{ record.resolution_type }}</a-tag>
+              </template>
+              <template v-if="column.key === 'bps'">
+                {{ formatBps(record.bps) }}
+              </template>
+              <template v-if="column.key === 'duration'">
+                {{ formatDuration(record.duration) }}
+              </template>
+              <template v-if="column.key === 'color_range_type'">
+                <a-tag :color="getColorRangeColor(record.color_range_type)">{{ record.color_range_type }}</a-tag>
+              </template>
+            </template>
+          </a-table>
+        </div>
+
+        <!-- 音频流信息 -->
+        <div v-if="streamInfo && streamInfo.audio_streams.length > 0" style="margin-top: 16px">
+          <h4>音频流</h4>
+          <a-table
+            :dataSource="streamInfo.audio_streams"
+            :columns="audioColumns"
+            rowKey="guid"
+            size="small"
+            :pagination="false"
+            bordered
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'audio_type'">
+                <a-tag :color="getAudioTypeColor(record.audio_type)">{{ record.audio_type }}</a-tag>
+              </template>
+              <template v-if="column.key === 'bps'">
+                {{ formatBps(record.bps) }}
+              </template>
+              <template v-if="column.key === 'duration'">
+                {{ formatDuration(record.duration) }}
+              </template>
+              <template v-if="column.key === 'is_default'">
+                <a-tag v-if="record.is_default === 1" color="blue">默认</a-tag>
+                <span v-else>-</span>
+              </template>
+              <template v-if="column.key === 'channels'">
+                {{ getChannelLayout(record.channels) }}
+              </template>
+            </template>
+          </a-table>
+        </div>
+
+        <!-- 字幕流信息 -->
+        <div v-if="streamInfo && streamInfo.subtitle_streams.length > 0" style="margin-top: 16px">
+          <h4>字幕</h4>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <a-tag v-for="(subtitle, index) in streamInfo.subtitle_streams" :key="index" color="cyan">
+              {{ subtitle }}
+            </a-tag>
+          </div>
+        </div>
       </template>
     </a-spin>
     <template #footer>
@@ -105,9 +206,8 @@
 </template>
 
 <script setup lang="ts">
-import { useUiStore } from '@/stores/ui'
 import { proxyImage } from '@/utils/image'
-import { getEpisodes, getItem, getPersons, getPlayURL, getSeasons, type MediaItem, type Person, type Season } from '@/api/trimmedia'
+import { getEpisodes, getItem, getPersons, getPlayURL, getSeasons, getStreamList, type MediaItem, type Person, type Season, type StreamListResult } from '@/api/trimmedia'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { rescrapeItem } from '@/api/scrapelog'
@@ -116,8 +216,6 @@ import MediaImage from './MediaImage.vue'
 import MediaEditModal from './MediaEditModal.vue'
 
 import { EditOutlined, ThunderboltOutlined, PlayCircleOutlined } from '@ant-design/icons-vue'
-
-const uiStore = useUiStore()
 
 const editModalRef = ref<typeof MediaEditModal>()
 
@@ -130,9 +228,108 @@ const scraping = ref(false)
 const persons = ref<Person[]>([])
 const seasons = ref<Season[]>([])
 const episodes = ref<Season[]>([])
+const streamInfo = ref<StreamListResult | null>(null)
 
 const guid = ref('')
 const item = ref<MediaItem | null>(null)
+
+const fileColumns = [
+  { title: '文件名', dataIndex: 'file_name', key: 'file_name', ellipsis: true },
+  { title: '大小', key: 'size', width: 100 },
+  { title: '路径', dataIndex: 'path', key: 'path', ellipsis: true },
+  { title: '状态', key: 'can_play', width: 90 },
+]
+
+const videoColumns = [
+  { title: '分辨率', key: 'resolution', width: 120 },
+  { title: '类型', key: 'resolution_type', width: 80 },
+  { title: '编码', dataIndex: 'codec_name', key: 'codec_name', width: 80 },
+  { title: 'HDR', key: 'color_range_type', width: 80 },
+  { title: '封装', dataIndex: 'wrapper', key: 'wrapper', width: 80 },
+  { title: '码率', key: 'bps', width: 100 },
+  { title: '帧率', dataIndex: 'r_frame_rate', key: 'r_frame_rate', width: 90 },
+  { title: '时长', key: 'duration', width: 90 },
+  { title: '位深', dataIndex: 'bit_depth', key: 'bit_depth', width: 70 },
+]
+
+const audioColumns = [
+  { title: '类型', key: 'audio_type', width: 100 },
+  { title: '编码', dataIndex: 'codec_name', key: 'codec_name', width: 80 },
+  { title: '语言', dataIndex: 'language', key: 'language', width: 70 },
+  { title: '声道', key: 'channels', width: 80 },
+  { title: '采样率', dataIndex: 'sample_rate', key: 'sample_rate', width: 90 },
+  { title: '码率', key: 'bps', width: 100 },
+  { title: '默认', key: 'is_default', width: 70 },
+  { title: '时长', key: 'duration', width: 90 },
+]
+
+function formatFileSize(bytes: number): string {
+  if (!bytes) return '-'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let i = 0
+  let n = bytes
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024
+    i++
+  }
+  return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
+
+function formatBps(bps: number): string {
+  if (!bps) return '-'
+  if (bps >= 1000000) return `${(bps / 1000000).toFixed(1)} Mbps`
+  if (bps >= 1000) return `${(bps / 1000).toFixed(0)} kbps`
+  return `${bps} bps`
+}
+
+function formatDuration(seconds: number): string {
+  if (!seconds) return '-'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
+function getChannelLayout(channels: number): string {
+  const map: Record<number, string> = {
+    1: 'Mono',
+    2: 'Stereo',
+    6: '5.1',
+    8: '7.1',
+  }
+  return map[channels] || `${channels}ch`
+}
+
+function getResolutionColor(type: string): string {
+  const map: Record<string, string> = {
+    '4k': 'purple',
+    '1080p': 'blue',
+    '720p': 'green',
+    '480p': 'orange',
+  }
+  return map[type?.toLowerCase()] || 'default'
+}
+
+function getColorRangeColor(type: string): string {
+  const map: Record<string, string> = {
+    'HDR': 'gold',
+    'HDR10': 'gold',
+    'DolbyVision': 'magenta',
+    'SDR': 'default',
+  }
+  return map[type] || 'default'
+}
+
+function getAudioTypeColor(type: string): string {
+  const map: Record<string, string> = {
+    'DolbyAtmos': 'magenta',
+    'DTS': 'gold',
+    'TrueHD': 'purple',
+  }
+  return map[type] || 'blue'
+}
 
 function itemYear(item: MediaItem): string {
   const date = item.release_date || item.air_date || ''
@@ -156,10 +353,11 @@ const open = async (val: string) => {
   persons.value = []
   seasons.value = []
   episodes.value = []
+  streamInfo.value = null
   visible.value = true
   loading.value = true
   guid.value = val
-  await Promise.all([loadItem(), loadPersons(), loadSeasons()])
+  await Promise.all([loadItem(), loadPersons(), loadSeasons(), loadStreamInfo()])
   loading.value = false
 }
 
@@ -198,6 +396,7 @@ async function loadPersons() {
 
 async function loadSeasons() {
   try {
+    if (item.value?.type !== 'TV') return
     const { data } = await getSeasons(guid.value)
     seasons.value = data || []
     if (seasons.value.length > 0) {
@@ -213,6 +412,15 @@ async function loadEpisodes(seasonId: string) {
     episodes.value = data || []
   } catch {
     message.error('获取剧集列表失败')
+  }
+}
+
+async function loadStreamInfo() {
+  try {
+    const { data } = await getStreamList(guid.value)
+    streamInfo.value = data || null
+  } catch {
+    // 静默失败，不影响详情展示
   }
 }
 

@@ -176,6 +176,94 @@ type PersonSearchResult struct {
 	IsFavorite    int    `json:"is_favorite"`
 }
 
+// MediaFileInfo 媒体文件信息
+type MediaFileInfo struct {
+	GUID                string `json:"guid"`
+	Path                string `json:"path"`
+	FileName            string `json:"file_name"`
+	Size                int64  `json:"size"`
+	Timestamp           int64  `json:"timestamp"`
+	Type                int    `json:"type"`
+	SortNum             int    `json:"sort_num"`
+	CanPlay             int    `json:"can_play"`
+	PlayError           string `json:"play_error"`
+	CreateTime          int64  `json:"create_time"`
+	UpdateTime          int64  `json:"update_time"`
+	ParentFVGuid        string `json:"parent_fv_guid"`
+	FileBirthTime       int64  `json:"file_birth_time"`
+	ProgressThumbHashDir string `json:"progress_thumb_hash_dir"`
+}
+
+// VideoStreamInfo 视频流信息
+type VideoStreamInfo struct {
+	MediaGUID          string `json:"media_guid"`
+	Title              string `json:"title"`
+	GUID               string `json:"guid"`
+	ResolutionType     string `json:"resolution_type"`
+	ColorRangeType     string `json:"color_range_type"`
+	CodecName          string `json:"codec_name"`
+	CodecType          string `json:"codec_type"`
+	ColorRange         string `json:"color_range"`
+	Profile            string `json:"profile"`
+	Index              int    `json:"index"`
+	Width              int    `json:"width"`
+	Height             int    `json:"height"`
+	CodedWidth         int    `json:"coded_width"`
+	CodedHeight        int    `json:"coded_height"`
+	DisplayAspectRatio string `json:"display_aspect_ratio"`
+	PixFmt             string `json:"pix_fmt"`
+	Level              string `json:"level"`
+	ColorSpace         string `json:"color_space"`
+	ColorTransfer      string `json:"color_transfer"`
+	ColorPrimaries     string `json:"color_primaries"`
+	Duration           int64  `json:"duration"`
+	DVProfile          int    `json:"dv_profile"`
+	Refs               int    `json:"refs"`
+	RFrameRate         string `json:"r_frame_rate"`
+	AvgFrameRate       string `json:"avg_frame_rate"`
+	BitsPerRawSample   string `json:"bits_per_raw_sample"`
+	BPS                int64  `json:"bps"`
+	Progressive        int    `json:"progressive"`
+	BitDepth           int    `json:"bit_depth"`
+	Wrapper            string `json:"wrapper"`
+	CreateTime         int64  `json:"create_time"`
+	UpdateTime         int64  `json:"update_time"`
+	Rotation           int    `json:"rotation"`
+	Ext1               int    `json:"ext1"`
+	IsBluray           bool   `json:"is_bluray"`
+}
+
+// AudioStreamInfo 音频流信息
+type AudioStreamInfo struct {
+	MediaGUID        string `json:"media_guid"`
+	Title            string `json:"title"`
+	GUID             string `json:"guid"`
+	AudioType        string `json:"audio_type"`
+	CodecName        string `json:"codec_name"`
+	CodecType        string `json:"codec_type"`
+	Language         string `json:"language"`
+	Channels         int    `json:"channels"`
+	Profile          string `json:"profile"`
+	SampleRate       string `json:"sample_rate"`
+	IsDefault        int    `json:"is_default"`
+	ChannelLayout    string `json:"channel_layout"`
+	Duration         int64  `json:"duration"`
+	Index            int    `json:"index"`
+	BitsPerRawSample string `json:"bits_per_raw_sample"`
+	BPS              int64  `json:"bps"`
+	CreateTime       int64  `json:"create_time"`
+	UpdateTime       int64  `json:"update_time"`
+	IsFake           bool   `json:"is_fake"`
+}
+
+// StreamListResult 媒体流信息列表
+type StreamListResult struct {
+	Files           []MediaFileInfo    `json:"files"`
+	VideoStreams    []VideoStreamInfo  `json:"video_streams"`
+	AudioStreams    []AudioStreamInfo  `json:"audio_streams"`
+	SubtitleStreams []string           `json:"subtitle_streams"`
+}
+
 // TmdbID 从 trim_id 提取 tmdb id
 // 飞牛给 tmdbid 加了前缀用以区分 tv 或 movie：tt* 或 tm*
 func (i *Item) TmdbID() int {

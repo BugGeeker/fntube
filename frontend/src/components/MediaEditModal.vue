@@ -179,10 +179,6 @@ const genresLoading = ref(false)
 const countryOptions = ref<Country[]>([])
 const countriesLoading = ref(false)
 
-// 搜索相关
-const searchVisible = ref(false)
-const searchKeyword = ref('')
-
 // 翻译状态
 const translatingTitle = ref(false)
 const translatingOverview = ref(false)

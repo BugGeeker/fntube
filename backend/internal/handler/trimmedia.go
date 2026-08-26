@@ -55,6 +55,7 @@ func RegisterTrimMediaHandlers(h *server.Hertz, db *gorm.DB, service *trimmedia.
 	g.GET("/countries", hd.getCountries)
 	g.POST("/refresh", hd.refresh)
 	g.GET("/search", hd.search)
+	g.GET("/stream/:itemId", hd.getStreamList)
 	g.GET("/img", hd.proxyImage)
 }
 
@@ -678,6 +679,21 @@ func (h *TrimMediaHandler) search(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	c.JSON(200, items)
+}
+
+// getStreamList 获取媒体文件/视频/音频/字幕流信息
+func (h *TrimMediaHandler) getStreamList(ctx context.Context, c *app.RequestContext) {
+	if h.service == nil || !h.service.IsAuthenticated() {
+		c.JSON(401, map[string]string{"error": "not authenticated"})
+		return
+	}
+	itemID := string(c.Param("itemId"))
+	result, err := h.service.GetStreamList(itemID)
+	if err != nil {
+		c.JSON(500, map[string]string{"error": err.Error()})
+		return
+	}
+	c.JSON(200, result)
 }
 
 // proxyImage 代理飞牛图片，携带登录会话 Cookie 访问

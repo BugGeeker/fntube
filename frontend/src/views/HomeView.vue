@@ -77,7 +77,7 @@
           >
             <div class="media-card" @click="openItem(item)">
               <MediaImage
-                :src="proxyImage(item.image)"
+                :src="item.image"
                 :alt="item.title"
                 ratio="3 / 2"
               />
@@ -108,14 +108,11 @@ import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import { getDashboardSummary, type DashboardSummary } from '@/api/dashboard'
 import { getLatest, type PlayItem } from '@/api/trimmedia'
-import { proxyImage } from '@/utils/image'
-import { useUiStore } from '@/stores/ui'
 import { formatDateTime } from '@/utils/format'
 import MediaImage from '@/components/MediaImage.vue'
 
 use([CanvasRenderer, LineChart, GridComponent, TooltipComponent])
 
-const uiStore = useUiStore()
 const loading = ref(false)
 const latestLoading = ref(false)
 const summary = ref<DashboardSummary | null>(null)
