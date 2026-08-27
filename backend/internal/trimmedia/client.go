@@ -393,7 +393,13 @@ func (c *Client) ProxyImage(path string) ([]byte, string, error) {
 	if path == "" {
 		return nil, "", fmt.Errorf("empty image path")
 	}
-	reqURL := c.host + path
+	imageURL, err := url.Parse(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("parse image path: %w", err)
+	}
+	// 飞牛部分图片经 w 参数缩放后会返回无法解码的 WebP，统一获取原图。
+	imageURL.RawQuery = ""
+	reqURL := c.host + imageURL.String()
 	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("new image request: %w", err)

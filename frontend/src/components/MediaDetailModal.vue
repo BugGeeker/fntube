@@ -185,7 +185,13 @@
           <template #icon>
             <ThunderboltOutlined />
           </template>
-          刮削
+          一键刮削
+        </a-button>
+        <a-button @click="handleSearch">
+          <template #icon>
+            <SearchOutlined />
+          </template>
+          搜索
         </a-button>
         <a-button :loading="editLoading" @click="handleEdit(item!)">
           <template #icon>
@@ -203,6 +209,7 @@
     </template>
   </a-modal>
   <MediaEditModal ref="editModalRef" @saved="handleSaved" />
+  <MetaTubeSearchModal ref="searchModalRef" @select="handleSearchSelect" />
 </template>
 
 <script setup lang="ts">
@@ -214,11 +221,13 @@ import { rescrapeItem } from '@/api/scrapelog'
 import MediaImage from './MediaImage.vue'
 
 import MediaEditModal from './MediaEditModal.vue'
+import MetaTubeSearchModal from './MetaTubeSearchModal.vue'
+import { type MovieInfo } from '@/api/metatube'
 
-import { EditOutlined, ThunderboltOutlined, PlayCircleOutlined } from '@ant-design/icons-vue'
+import { EditOutlined, ThunderboltOutlined, PlayCircleOutlined, SearchOutlined } from '@ant-design/icons-vue'
 
 const editModalRef = ref<typeof MediaEditModal>()
-
+const searchModalRef = ref<typeof MetaTubeSearchModal>()
 
 const visible = ref(false)
 const loading = ref(false)
@@ -339,6 +348,22 @@ function itemYear(item: MediaItem): string {
 // 编辑：触发编辑事件
 function handleEdit(item: MediaItem) {
   editModalRef.value?.open(item)
+}
+
+async function handleSearch() {
+  if (!item.value) return
+  const fileName = streamInfo.value?.files[0]?.file_name
+  const keyword = fileName?.replace(/\.[^.]+$/, '')
+  if (!keyword) {
+    message.warning('无法获取媒体文件名')
+    return
+  }
+  searchModalRef.value?.open(keyword)
+}
+
+async function handleSearchSelect(info: MovieInfo) {
+  if (!item.value) return
+  await editModalRef.value?.openWithMovieInfo(item.value, info)
 }
 
 // 编辑：刷新详情

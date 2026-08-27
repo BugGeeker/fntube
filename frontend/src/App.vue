@@ -6,20 +6,23 @@
         <a-menu v-model:selectedKeys="selectedKeys" mode="inline" :inline-collapsed="collapsed" :items="menuItems"
           @click="handleMenuClick" class="menu" />
         <div class="menu-footer" :class="{ 'menu-footer-collapsed': collapsed }">
-          <a-tooltip :title="uiStore.hideImages ? '当前已隐藏图片，点击显示图片' : '点击隐藏所有图片'">
-            <a-switch
-              v-model:checked="hideImagesChecked"
-              checked-children="隐图"
-              un-checked-children="显图"
-            />
-          </a-tooltip>
-          <a-tooltip :title="uiStore.darkMode ? '当前为深色模式，点击切换浅色' : '点击切换深色模式'">
-            <a-button :type="uiStore.darkMode ? 'primary' : 'default'" shape="circle" size="small" @click="uiStore.toggleDarkMode()">
-              <template #icon>
-                <component :is="uiStore.darkMode ? BulbFilled : BulbOutlined" />
-              </template>
-            </a-button>
-          </a-tooltip>
+          <div class="menu-actions">
+            <a-tooltip :title="uiStore.hideImages ? '当前已隐藏图片，点击显示图片' : '点击隐藏所有图片'">
+              <a-switch
+                v-model:checked="hideImagesChecked"
+                checked-children="隐图"
+                un-checked-children="显图"
+              />
+            </a-tooltip>
+            <a-tooltip :title="uiStore.darkMode ? '当前为深色模式，点击切换浅色' : '点击切换深色模式'">
+              <a-button :type="uiStore.darkMode ? 'primary' : 'default'" shape="circle" size="small" @click="uiStore.toggleDarkMode()">
+                <template #icon>
+                  <component :is="uiStore.darkMode ? BulbFilled : BulbOutlined" />
+                </template>
+              </a-button>
+            </a-tooltip>
+          </div>
+          <span v-if="appVersion" class="app-version">v{{ appVersion }}</span>
         </div>
       </div>
 
@@ -37,6 +40,7 @@
 
 <script setup lang="ts">
 import { ref, watch, h, onMounted, onBeforeUnmount, computed } from 'vue'
+import request from '@/api/request'
 import { useRoute, useRouter } from 'vue-router'
 import {
   DashboardOutlined,
@@ -51,6 +55,7 @@ import {
 import { theme } from 'ant-design-vue'
 import { useUiStore } from '@/stores/ui'
 
+const appVersion = ref('')
 const route = useRoute()
 const router = useRouter()
 const uiStore = useUiStore()
@@ -72,9 +77,15 @@ function checkCollapsed() {
   collapsed.value = window.innerWidth < 640
 }
 
-onMounted(() => {
+onMounted(async () => {
   checkCollapsed()
   window.addEventListener('resize', checkCollapsed)
+  try {
+    const { data } = await request.get<{ version: string }>('/version')
+    appVersion.value = data.version
+  } catch {
+    // 开发环境未注入版本变量时不显示版本号
+  }
 })
 
 onBeforeUnmount(() => {
@@ -161,16 +172,28 @@ function handleMenuClick({ key }: { key: string }) {
 }
 
 .menu-footer {
-  padding: 12px 10px;
+  padding: 10px;
   border-top: 1px solid v-bind('token.colorBorderSecondary');
   background: v-bind('token.colorBgContainer');
+  text-align: center;
+}
+
+.menu-actions {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 12px;
 }
 
-.menu-footer-collapsed {
+.app-version {
+  display: block;
+  margin-top: 8px;
+  color: v-bind('token.colorTextTertiary');
+  font-size: 12px;
+  line-height: 1;
+}
+
+.menu-footer-collapsed .menu-actions {
   flex-direction: column;
   gap: 10px;
 }

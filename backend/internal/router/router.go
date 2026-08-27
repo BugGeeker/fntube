@@ -36,6 +36,11 @@ func Register(h *server.Hertz, db *gorm.DB, trimSvc *trimmedia.Service, sched *s
 		c.JSON(200, map[string]string{"status": "ok"})
 	})
 
+	// 应用版本
+	h.GET("/api/version", func(ctx context.Context, c *app.RequestContext) {
+		c.JSON(200, map[string]string{"version": os.Getenv("TRIM_APPVER")})
+	})
+
 	// 飞牛影视
 	handler.RegisterTrimMediaHandlers(h, db, trimSvc)
 

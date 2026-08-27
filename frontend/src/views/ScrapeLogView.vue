@@ -1,8 +1,16 @@
 <template>
   <div>
     <a-card title="刮削记录">
+      <template #extra>
+        <a-button :loading="loading" @click="loadLogs">
+          <template #icon>
+            <ReloadOutlined />
+          </template>
+        </a-button>
+      </template>
       <a-spin :spinning="loading">
-        <a-table :dataSource="logs" :columns="columns" rowKey="id" :pagination="pagination" @change="handleTableChange" :scroll="{ x: '100%' }">
+        <a-table :dataSource="logs" :columns="columns" rowKey="id" :pagination="pagination" @change="handleTableChange"
+          :scroll="{ x: '100%' }">
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'title'">
               <a @click="showDetail(record)">{{ record.title }}</a>
@@ -22,7 +30,8 @@
                     <span v-if="s.error" style="color: #ff4d4f; margin-left: 4px">{{ s.error }}</span>
                   </div>
                 </template>
-                <a-badge v-if="record.status === 'in_progress'" :status="stepsBadgeStatus(record.steps)" :text="stepsSummary(record.steps)" />
+                <a-badge v-if="record.status === 'in_progress'" :status="stepsBadgeStatus(record.steps)"
+                  :text="stepsSummary(record.steps)" />
                 <a-tag v-else-if="record.status === 'success'" color="green">成功</a-tag>
                 <a-tag v-else-if="record.status === 'failed'" color="red">失败</a-tag>
                 <a-tag v-else-if="record.status === 'completed'" color="blue">完成</a-tag>
@@ -31,7 +40,7 @@
               <span v-else>-</span>
             </template>
             <template v-if="column.key === 'steps'">
-              
+
             </template>
             <template v-if="column.key === 'error'">
               <a-tooltip v-if="record.error" :title="record.error">
@@ -44,7 +53,8 @@
             </template>
             <template v-if="column.key === 'action'">
               <a-space>
-                <a-button size="small" :loading="rescrapingGuid === record.item_guid" @click="handleRescrape(record)">重新刮削</a-button>
+                <a-button size="small" :loading="rescrapingGuid === record.item_guid"
+                  @click="handleRescrape(record)">重新刮削</a-button>
                 <a-button danger size="small" @click="handleDelete(record)">删除</a-button>
               </a-space>
             </template>
@@ -64,6 +74,7 @@ import { ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { getScrapeLogs, deleteScrapeLog, rescrapeItem, type ScrapeLog, type ScrapeStep } from '@/api/scrapelog'
 import { formatDate } from '@/utils/format'
+import { ReloadOutlined } from '@ant-design/icons-vue'
 import MediaDetailModal from '@/components/MediaDetailModal.vue'
 
 const loading = ref(false)

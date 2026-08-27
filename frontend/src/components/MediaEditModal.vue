@@ -150,6 +150,7 @@ import {
   getCountries,
   batchCreateGenres,
   searchPersons,
+  getStreamList,
   importPerson,
   downloadAndUploadImage,
   type EditDetail,
@@ -214,8 +215,14 @@ const open = async (item: MediaItem) => {
   }
 }
 
+async function openWithMovieInfo(item: MediaItem, info: MovieInfo) {
+  await open(item)
+  await fillEditFormFromMovieInfo(info)
+}
+
 defineExpose({
   open,
+  openWithMovieInfo,
 })
 
 async function loadGenres() {
@@ -277,12 +284,18 @@ async function handleSaveEdit() {
 
 async function handleSearch() {
   if (!currentItem.value) return
-  const keyword = currentItem.value.title
-  if (!keyword) {
-    message.warning('无法获取搜索关键词')
-    return
+  try {
+    const { data } = await getStreamList(currentItem.value.guid)
+    const fileName = data.files[0]?.file_name
+    const keyword = fileName?.replace(/\.[^.]+$/, '')
+    if (!keyword) {
+      message.warning('无法获取媒体文件名')
+      return
+    }
+    searchModal.value?.open(keyword)
+  } catch {
+    message.error('获取媒体文件信息失败')
   }
-  searchModal.value?.open(keyword)
 }
 
 // 选中搜索结果后，将影片详情填入编辑弹窗

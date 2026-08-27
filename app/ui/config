@@ -2,7 +2,7 @@
     ".url": {
         "FnTube.Application": {
             "title": "FnTube",
-            "icon": "images/icon_{0}.png",
+            "icon": "images/icon.png",
             "type": "iframe",
             "url": "/cgi/ThirdParty/FnTube/index.cgi/",
             "allUsers": false

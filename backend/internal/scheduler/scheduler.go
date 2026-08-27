@@ -1,9 +1,14 @@
 package scheduler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"log"
 	"net/http"
@@ -13,6 +18,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"fntube/badge"
 	"fntube/internal/metatube"
 	"fntube/internal/model"
 	"fntube/internal/trimmedia"
@@ -293,9 +299,16 @@ func (s *Scheduler) getScrapedItems() (map[string]bool, error) {
 
 // scrapeItem 对单个媒体项执行刮削，返回番号
 func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatube.Client, translateMode, translateEngine, engineConfig string, genreMap map[string]int, method string, taskRunID uint) (string, error) {
-	keyword := item.Title
-	if keyword == "" {
-		return "", fmt.Errorf("标题为空")
+	streamList, err := s.service.GetStreamList(item.Guid)
+	if err != nil {
+		return "", fmt.Errorf("获取媒体流信息失败: %w", err)
+	}
+	if len(streamList.Files) == 0 || streamList.Files[0].FileName == "" {
+		return "", fmt.Errorf("媒体文件名为空")
+	}
+	keyword := streamList.Files[0].FileName
+	if extIdx := strings.LastIndex(keyword, "."); extIdx > 0 {
+		keyword = keyword[:extIdx]
 	}
 
 	// 创建刮削日志记录（开始时记录）
@@ -406,7 +419,7 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 			posterURL = info.ThumbURL
 		}
 		addStep(model.StepDownloadPoster, "running", "")
-		if path, err := s.downloadAndUploadImage(posterURL, "poster"); err == nil {
+		if path, err := s.downloadAndUploadPoster(posterURL, keyword); err == nil {
 			detail.Posters = path
 			addStep(model.StepDownloadPoster, "success", "")
 		} else {
@@ -625,6 +638,100 @@ func (s *Scheduler) applyTranslation(detail *trimmedia.EditDetail, info *metatub
 		return fmt.Errorf(strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+// downloadAndUploadPoster 下载封面、按关键词添加徽标并上传到飞牛。
+func (s *Scheduler) downloadAndUploadPoster(url, keyword string) (string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("下载图片状态码: %d", resp.StatusCode)
+	}
+
+	imgData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	badgeName := posterBadgeName(keyword)
+	if badgeName == "" {
+		return s.service.UploadImage(imgData, imageFilename(url), "poster")
+	}
+
+	poster, _, err := image.Decode(bytes.NewReader(imgData))
+	if err != nil {
+		return "", fmt.Errorf("解析封面图片失败: %w", err)
+	}
+	badgeData, err := badge.Read(badgeName)
+	if err != nil {
+		return "", fmt.Errorf("读取徽标失败: %w", err)
+	}
+	badge, err := png.Decode(bytes.NewReader(badgeData))
+	if err != nil {
+		return "", fmt.Errorf("解析徽标失败: %w", err)
+	}
+
+	posterBounds := poster.Bounds()
+	badge = scaleToFit(badge, posterBounds.Dx()/2, posterBounds.Dy()/2)
+	merged := image.NewRGBA(posterBounds)
+	draw.Draw(merged, posterBounds, poster, posterBounds.Min, draw.Src)
+	draw.Draw(merged, image.Rectangle{Min: posterBounds.Min, Max: posterBounds.Min.Add(badge.Bounds().Size())}, badge, badge.Bounds().Min, draw.Over)
+
+	var mergedData bytes.Buffer
+	if err := jpeg.Encode(&mergedData, merged, nil); err != nil {
+		return "", fmt.Errorf("生成封面图片失败: %w", err)
+	}
+	return s.service.UploadImage(mergedData.Bytes(), "poster.jpg", "poster")
+}
+
+func posterBadgeName(keyword string) string {
+	keyword = strings.ToUpper(keyword)
+	switch {
+	case strings.HasSuffix(keyword, "-UC"):
+		return "uc.png"
+	case strings.HasSuffix(keyword, "-CH"), strings.HasSuffix(keyword, "-C"):
+		return "c.png"
+	case strings.HasSuffix(keyword, "-U"):
+		return "u.png"
+	default:
+		return ""
+	}
+}
+
+func scaleToFit(src image.Image, maxWidth, maxHeight int) image.Image {
+	bounds := src.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+	if width <= maxWidth && height <= maxHeight {
+		return src
+	}
+	scale := float64(maxWidth) / float64(width)
+	if height*maxWidth > width*maxHeight {
+		scale = float64(maxHeight) / float64(height)
+	}
+	newWidth, newHeight := int(float64(width)*scale), int(float64(height)*scale)
+	dst := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
+	for y := 0; y < newHeight; y++ {
+		for x := 0; x < newWidth; x++ {
+			dst.Set(x, y, src.At(bounds.Min.X+x*width/newWidth, bounds.Min.Y+y*height/newHeight))
+		}
+	}
+	return dst
+}
+
+func imageFilename(url string) string {
+	filename := "image.jpg"
+	if idx := strings.LastIndex(url, "/"); idx >= 0 {
+		name := url[idx+1:]
+		if qIdx := strings.Index(name, "?"); qIdx >= 0 {
+			name = name[:qIdx]
+		}
+		if name != "" && strings.Contains(name, ".") {
+			filename = name
+		}
+	}
+	return filename
 }
 
 // downloadAndUploadImage 下载网络图片并上传到飞牛
