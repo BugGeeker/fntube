@@ -36,6 +36,7 @@ func RegisterTrimMediaHandlers(h *server.Hertz, db *gorm.DB, service *trimmedia.
 	g.POST("/config", hd.saveConfig)
 	g.POST("/test", hd.testConnection)
 	g.GET("/libraries", hd.getLibraries)
+	g.GET("/libraries/:libraryId/view-type", hd.getLibraryViewType)
 	g.GET("/items/:libraryId", hd.getItems)
 	g.GET("/item/:itemId", hd.getItem)
 	g.GET("/seasons/:tvId", hd.getSeasons)
@@ -175,6 +176,21 @@ func (h *TrimMediaHandler) getLibraries(ctx context.Context, c *app.RequestConte
 		return
 	}
 	c.JSON(200, libs)
+}
+
+// getLibraryViewType 获取媒体库布局类型
+func (h *TrimMediaHandler) getLibraryViewType(ctx context.Context, c *app.RequestContext) {
+	if h.service == nil || !h.service.IsAuthenticated() {
+		c.JSON(401, map[string]string{"error": "not authenticated"})
+		return
+	}
+	libraryID := string(c.Param("libraryId"))
+	viewType, err := h.service.GetLibraryViewType(libraryID)
+	if err != nil {
+		c.JSON(500, map[string]string{"error": err.Error()})
+		return
+	}
+	c.JSON(200, map[string]string{"view_type": viewType})
 }
 
 // getItems 列出媒体库下的项目

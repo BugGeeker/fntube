@@ -15,7 +15,7 @@
       </template>
       <a-spin :spinning="store.loading">
         <a-row :gutter="[16, 16]">
-          <a-col v-for="lib in store.libraries" :key="lib.id" :xs="24" :sm="12" :md="8" :lg="6" :xl="4">
+          <a-col v-for="lib in store.libraries" :key="lib.id" :xs="12" :sm="8" :md="6" :lg="4" :xl="3" :xxl="2">
             <a-card hoverable size="small" @click="enterLibrary(lib)">
               <template #cover>
                 <MediaImage :src="lib.image_list?.[0]" :alt="lib.name" ratio="2 / 3" />

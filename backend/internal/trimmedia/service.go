@@ -166,6 +166,14 @@ func (s *Service) Disconnect() {
 	}
 }
 
+// GetLibraryViewType 获取指定媒体库的布局类型
+func (s *Service) GetLibraryViewType(libraryID string) (string, error) {
+	if !s.IsAuthenticated() {
+		return "", fmt.Errorf("not authenticated")
+	}
+	return s.client.UserViewType(libraryID)
+}
+
 // GetLibraries 获取媒体服务器所有媒体库列表
 // hidden=true 时过滤掉被屏蔽的库
 // syncLibraries 为空或包含 "all" 时返回全部，否则仅返回同步列表中的媒体库

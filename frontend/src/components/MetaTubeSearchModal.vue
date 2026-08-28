@@ -9,8 +9,7 @@
     <a-spin :spinning="searching" style="min-height: 400px">
       <a-empty v-if="!searching && metaTubeStore.searchResults.length === 0" description="无搜索结果" />
       <a-row :gutter="[16, 16]">
-        <a-col v-for="result in metaTubeStore.searchResults" :key="result.id + result.provider" :xs="24" :sm="12"
-          :md="8">
+        <a-col v-for="result in metaTubeStore.searchResults" :key="result.id + result.provider" :xs="12" :sm="8" :md="6" :lg="4" :xl="3" :xxl="2" >
           <a-card hoverable size="small" style="overflow: hidden" @click="handleResultClick(result)">
             <template #cover>
               <MediaImage :src="result.thumb_url || result.cover_url" alt="cover" :fallback="result.number"

@@ -17,21 +17,19 @@
         <a-input v-model:value="form.play_host" placeholder="如 http://your-domain:5666/v" allow-clear />
       </a-form-item>
       <a-form-item label="同步媒体库" name="sync_libraries">
-        <a-space-compact block>
-          <a-select v-model:value="selectedLibraries" mode="multiple" placeholder="点击右侧按钮加载媒体库列表" allow-clear
-            :options="libraryOptions" :field-names="{ label: 'name', value: 'id' }" option-filter-prop="name"
-            style="width: 100%" />
-          <a-button :loading="loadingLibs" @click="handleLoadLibraries">
-            加载媒体库列表
-          </a-button>
-        </a-space-compact>
+        <a-select v-model:value="selectedLibraries" mode="multiple" placeholder="点击下方按钮加载媒体库列表" allow-clear
+          :options="libraryOptions" :field-names="{ label: 'name', value: 'id' }" option-filter-prop="name"
+          style="width: 100%" />
 
         <span style="margin-left: 8px; color: rgba(0,0,0,0.45)">
           选中“全部媒体库”即同步所有媒体库，或按需勾选
         </span>
       </a-form-item>
-      <a-space>
+      <a-space wrap>
         <a-button type="primary" html-type="submit" :loading="saving">保存配置</a-button>
+        <a-button :loading="loadingLibs" @click="handleLoadLibraries">
+            加载媒体库列表
+          </a-button>
         <a-button :loading="testing" @click="handleTest">测试连接</a-button>
       </a-space>
     </a-form>
@@ -108,7 +106,7 @@ onMounted(async () => {
     await store.fetchConfig()
     if (store.config) {
       Object.assign(form, store.config)
-      if(form.host && form.username && form.password) {
+      if (form.host && form.username && form.password) {
         handleLoadLibraries()
       }
     }

@@ -10,7 +10,7 @@
       </template>
       <a-spin :spinning="loading">
         <a-table :dataSource="logs" :columns="columns" rowKey="id" :pagination="pagination" @change="handleTableChange"
-          :scroll="{ x: '100%' }">
+          table-layout="fixed" :scroll="{ x: '100%' }">
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'title'">
               <a @click="showDetail(record)">{{ record.title }}</a>
@@ -94,14 +94,14 @@ const pagination = ref({
 })
 
 const columns = [
-  { title: '标题', dataIndex: 'title', key: 'title', ellipsis: true },
   { title: '番号', dataIndex: 'number', key: 'number', width: 120 },
+  { title: '标题', dataIndex: 'title', key: 'title', ellipsis: true, width: 200 },
   { title: '刮削方式', key: 'method', width: 100 },
-  { title: '状态', key: 'status', width: 100 },
+  { title: '状态', key: 'status', width: 80 },
   // { title: '步骤', key: 'steps', width: 180, ellipsis: true },
   // { title: '错误信息', key: 'error', width: 200, ellipsis: true },
-  { title: '刮削时间', key: 'created_at', width: 180 },
-  { title: '操作', key: 'action', width: 180 },
+  { title: '刮削时间', key: 'created_at', width: 160 },
+  { title: '操作', key: 'action', width: 160, fixed: 'right' },
 ]
 
 function truncate(s: string, n: number): string {

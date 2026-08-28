@@ -1,13 +1,11 @@
 <template>
-  <img
-    v-if="src && !uiStore.hideImages"
-    :src="proxyImage(src)"
-    class="media-image"
-    :alt="alt"
-  />
-  <div v-else class="media-image media-image-placeholder">
-    <span class="media-image-placeholder-text">{{ fallbackText }}</span>
+  <div class="img-wrapper">
+    <img v-if="src && !uiStore.hideImages" :src="proxyImage(src)" class="media-image" :alt="alt" />
+    <div v-else class="media-image media-image-placeholder">
+      <span class="media-image-placeholder-text">{{ fallbackText }}</span>
+    </div>
   </div>
+
 </template>
 
 <script setup lang="ts">
@@ -44,6 +42,10 @@ const fallbackText = computed(() => {
 </script>
 
 <style scoped>
+.img-wrapper {
+  background: v-bind('token.colorBgLayout');
+}
+
 .media-image {
   width: 100%;
   aspect-ratio: v-bind('props.ratio');

@@ -7,20 +7,13 @@
           @click="handleMenuClick" class="menu" />
         <div class="menu-footer" :class="{ 'menu-footer-collapsed': collapsed }">
           <div class="menu-actions">
-            <a-tooltip :title="uiStore.hideImages ? '当前已隐藏图片，点击显示图片' : '点击隐藏所有图片'">
-              <a-switch
-                v-model:checked="hideImagesChecked"
-                checked-children="隐图"
-                un-checked-children="显图"
-              />
-            </a-tooltip>
-            <a-tooltip :title="uiStore.darkMode ? '当前为深色模式，点击切换浅色' : '点击切换深色模式'">
-              <a-button :type="uiStore.darkMode ? 'primary' : 'default'" shape="circle" size="small" @click="uiStore.toggleDarkMode()">
-                <template #icon>
-                  <component :is="uiStore.darkMode ? BulbFilled : BulbOutlined" />
-                </template>
-              </a-button>
-            </a-tooltip>
+            <a-switch v-model:checked="hideImagesChecked" checked-children="隐图" un-checked-children="显图" />
+            <a-button :type="uiStore.darkMode ? 'primary' : 'default'" shape="circle" size="small"
+              @click="uiStore.toggleDarkMode()">
+              <template #icon>
+                <component :is="uiStore.darkMode ? BulbFilled : BulbOutlined" />
+              </template>
+            </a-button>
           </div>
           <span v-if="appVersion" class="app-version">v{{ appVersion }}</span>
         </div>

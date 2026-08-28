@@ -14,11 +14,11 @@
       </template>
       <a-spin :spinning="store.loading">
         <a-row :gutter="[16, 16]">
-          <a-col v-for="item in store.items" :key="item.guid" :xs="24" :sm="12" :md="8" :lg="6" :xl="4" :xxl="3">
+          <a-col v-for="item in store.items" :key="item.guid" :xs="12" :sm="8" :md="6" :lg="4" :xl="3" :xxl="2">
             <a-card hoverable size="small" @click="showDetail(item)" class="media-card">
               <template #cover>
                 <div style="position: relative;">
-                  <MediaImage :src="item.poster" :alt="item.title" ratio="2 / 3" />
+                  <MediaImage :src="item.poster" :alt="item.title" :ratio="posterRatio" />
 
                   <div class="card-actions" @click.stop">
                     <a-button size="medium" shape="circle" @click.stop="handleCardEdit(item)" title="播放">
@@ -83,7 +83,7 @@ import MediaDetailModal from '@/components/MediaDetailModal.vue'
 import MediaEditModal from '@/components/MediaEditModal.vue'
 import { rescrapeItem } from '@/api/scrapelog'
 import MediaImage from '@/components/MediaImage.vue'
-import type { MediaItem } from '@/api/trimmedia'
+import { getLibraryViewType, type MediaItem } from '@/api/trimmedia'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 
 const route = useRoute()
@@ -102,6 +102,8 @@ const libraryName = computed(() => {
   const lib = store.libraries.find(l => l.id === libraryId.value)
   return lib?.name || libraryId.value
 })
+const viewType = ref('')
+const posterRatio = computed(() => viewType.value === 'horizontal_poster' ? '3 / 2' : '2 / 3')
 
 // 分页
 const currentPage = ref(1)
@@ -130,6 +132,8 @@ onMounted(async () => {
   }
   // 加载 MetaTube 配置（用于判断翻译模式）
   await metaTubeStore.fetchConfig().catch(() => { })
+  const { data } = await getLibraryViewType(libraryId.value).catch(() => ({ data: { view_type: '' } }))
+  viewType.value = data.view_type
   // 加载该媒体库第一页条目
   currentPage.value = 1
   await loadItems()

@@ -9,6 +9,23 @@ import (
 	"net/http"
 )
 
+// UserViewType 获取指定媒体库的布局类型
+func (c *Client) UserViewType(libraryID string) (string, error) {
+	res, err := c.request("/user/getData", "POST", nil, map[string]interface{}{
+		"key":      "mdb:list:setting",
+		"mdb_guid": libraryID,
+	}, "", false)
+	if err != nil || !res.Success() {
+		return "", fmt.Errorf("user getData failed: %v", err)
+	}
+	value := getString(res.DataMap(), "value")
+	var setting map[string]interface{}
+	if err := json.Unmarshal([]byte(value), &setting); err != nil {
+		return "", fmt.Errorf("parse user getData value: %w", err)
+	}
+	return getString(setting, "view_type"), nil
+}
+
 // MediaDbList 媒体库列表(普通用户)
 func (c *Client) MediaDbList() ([]MediaDb, error) {
 	res, err := c.request("/mediadb/list", "GET", map[string]string{"page_size": "9999"}, nil, "", false)

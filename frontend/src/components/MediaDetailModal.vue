@@ -6,13 +6,13 @@
         <!-- 顶部图片横向布局 -->
         <div style="display: flex; gap: 12px; margin-bottom: 16px;">
           <div style="flex: 1; min-width: 0;">
-            <MediaImage :src="item.poster" ratio="3/2" alt="封面"/>
+            <MediaImage :src="item.poster" ratio="3/2" alt="封面" fit="contain" />
           </div>
           <div style="flex: 1; min-width: 0;">
-            <MediaImage :src="item.backdrop" ratio="3/2" alt="背景"/>
+            <MediaImage :src="item.backdrop" ratio="3/2" alt="背景" fit="contain" />
           </div>
           <div style="flex: 1; min-width: 0;">
-            <MediaImage :src="item.logo" ratio="3/2" alt="logo"/>
+            <MediaImage :src="item.logo" ratio="3/2" alt="logo" fit="contain" />
           </div>
         </div>
 
@@ -87,6 +87,8 @@
             size="small"
             :pagination="false"
             bordered
+            table-layout="fixed"
+            :scroll="{ x: '100%' }"
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'size'">
@@ -115,6 +117,8 @@
             size="small"
             :pagination="false"
             bordered
+            table-layout="fixed"
+            :scroll="{ x: '100%' }"
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'resolution'">
@@ -146,6 +150,8 @@
             size="small"
             :pagination="false"
             bordered
+            table-layout="fixed"
+            :scroll="{ x: '100%' }"
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'audio_type'">
@@ -185,7 +191,7 @@
           <template #icon>
             <ThunderboltOutlined />
           </template>
-          一键刮削
+          刮削
         </a-button>
         <a-button @click="handleSearch">
           <template #icon>
@@ -199,12 +205,6 @@
           </template>
           编辑
         </a-button>
-        <a-button type="primary" :loading="gettingURL" @click="handlePlay">
-          <template #icon>
-            <PlayCircleOutlined />
-          </template>
-          播放
-        </a-button>
       </a-space>
     </template>
   </a-modal>
@@ -214,7 +214,7 @@
 
 <script setup lang="ts">
 import { proxyImage } from '@/utils/image'
-import { getEpisodes, getItem, getPersons, getPlayURL, getSeasons, getStreamList, type MediaItem, type Person, type Season, type StreamListResult } from '@/api/trimmedia'
+import { getEpisodes, getItem, getPersons, getSeasons, getStreamList, type MediaItem, type Person, type Season, type StreamListResult } from '@/api/trimmedia'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { rescrapeItem } from '@/api/scrapelog'
@@ -224,14 +224,13 @@ import MediaEditModal from './MediaEditModal.vue'
 import MetaTubeSearchModal from './MetaTubeSearchModal.vue'
 import { type MovieInfo } from '@/api/metatube'
 
-import { EditOutlined, ThunderboltOutlined, PlayCircleOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import { EditOutlined, ThunderboltOutlined, SearchOutlined } from '@ant-design/icons-vue'
 
 const editModalRef = ref<typeof MediaEditModal>()
 const searchModalRef = ref<typeof MetaTubeSearchModal>()
 
 const visible = ref(false)
 const loading = ref(false)
-const gettingURL = ref(false)
 const editLoading = ref(false)
 const scraping = ref(false)
 const persons = ref<Person[]>([])
@@ -243,9 +242,9 @@ const guid = ref('')
 const item = ref<MediaItem | null>(null)
 
 const fileColumns = [
-  { title: '文件名', dataIndex: 'file_name', key: 'file_name', ellipsis: true },
+  { title: '文件名', dataIndex: 'file_name', key: 'file_name', ellipsis: true, width: 200 },
   { title: '大小', key: 'size', width: 100 },
-  { title: '路径', dataIndex: 'path', key: 'path', ellipsis: true },
+  { title: '路径', dataIndex: 'path', key: 'path', ellipsis: true, width: 200 },
   { title: '状态', key: 'can_play', width: 90 },
 ]
 
@@ -389,19 +388,6 @@ const open = async (val: string) => {
 defineExpose({
   open,
 })
-
-async function handlePlay() {
-  if (!guid.value) return
-  gettingURL.value = true
-  try {
-    const { data } = await getPlayURL(guid.value)
-    window.open(data?.url, '_blank')
-  } catch {
-    message.error('获取播放链接失败')
-  } finally {
-    gettingURL.value = false
-  }
-}
 
 async function loadItem() {
   try {

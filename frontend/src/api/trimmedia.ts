@@ -290,6 +290,9 @@ export const testConnection = (data: Partial<TrimMediaConfig>) =>
 
 export const getLibraries = () => request.get<Library[]>('/trimmedia/libraries')
 
+export const getLibraryViewType = (libraryId: string) =>
+  request.get<{ view_type: string }>(`/trimmedia/libraries/${libraryId}/view-type`)
+
 // --- 媒体条目 ---
 
 export const getItems = (libraryId: string, start = 0, limit = 20) =>
