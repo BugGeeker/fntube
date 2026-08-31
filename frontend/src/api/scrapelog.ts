@@ -22,8 +22,10 @@ export interface ScrapeLog {
 }
 
 // 获取刮削日志列表（分页）
-export const getScrapeLogs = (page = 1, pageSize = 20) =>
-  request.get<{ total: number; items: ScrapeLog[] }>('/scrapelog/list', { params: { page, page_size: pageSize } })
+export const getScrapeLogs = (page = 1, pageSize = 20, number = '') =>
+  request.get<{ total: number; items: ScrapeLog[] }>('/scrapelog/list', {
+    params: { page, page_size: pageSize, number: number || undefined },
+  })
 
 // 创建刮削日志
 export const createScrapeLog = (data: { item_guid: string; title: string; number: string; method: string }) =>

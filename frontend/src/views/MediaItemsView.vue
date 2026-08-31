@@ -13,14 +13,14 @@
         </a-space>
       </template>
       <a-spin :spinning="store.loading">
-        <a-row :gutter="[16, 16]">
-          <a-col v-for="item in store.items" :key="item.guid" :xs="12" :sm="8" :md="6" :lg="4" :xl="3" :xxl="2">
+        <div class="media-item-grid">
+          <div v-for="item in store.items" :key="item.guid" class="media-item-cell">
             <a-card hoverable size="small" @click="showDetail(item)" class="media-card">
               <template #cover>
                 <div style="position: relative;">
                   <MediaImage :src="item.poster" :alt="item.title" :ratio="posterRatio" />
 
-                  <div class="card-actions" @click.stop">
+                  <div class="card-actions" @click.stop>
                     <a-button size="medium" shape="circle" @click.stop="handleCardEdit(item)" title="播放">
                       <template #icon>
                         <CaretRightOutlined />
@@ -42,7 +42,7 @@
               </template>
               <a-card-meta>
                 <template #title>
-                  <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ item.title }}</div>
+                  <div style="overflow-wrap: anywhere; word-break: break-word">{{ item.title }}</div>
                 </template>
                 <template #description>
                   <span>{{ itemYear(item) || '未知年份' }}</span>
@@ -51,8 +51,8 @@
                 </template>
               </a-card-meta>
             </a-card>
-          </a-col>
-        </a-row>
+          </div>
+        </div>
         <a-empty v-if="!store.loading && store.items.length === 0" description="该媒体库暂无内容" />
       </a-spin>
       <div v-if="!store.loading && store.itemsTotal > 0"
@@ -197,6 +197,22 @@ async function handleScrape(item: MediaItem) {
 :deep(.ant-card-meta-detail) {
   min-width: 0;
   overflow: hidden;
+}
+
+.media-item-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.media-item-cell :deep(.ant-card) {
+  width: 100%;
+}
+
+.media-item-cell {
+  flex: 1 1 clamp(180px, 20vw, 250px);
+  min-width: 180px;
+  max-width: 250px;
 }
 
 .media-card {

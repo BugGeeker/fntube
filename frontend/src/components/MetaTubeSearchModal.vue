@@ -8,8 +8,8 @@
     </a-space-compact>
     <a-spin :spinning="searching" style="min-height: 400px">
       <a-empty v-if="!searching && metaTubeStore.searchResults.length === 0" description="无搜索结果" />
-      <a-row :gutter="[16, 16]">
-        <a-col v-for="result in metaTubeStore.searchResults" :key="result.id + result.provider" :xs="12" :sm="8" :md="6" :lg="4" :xl="3" :xxl="2" >
+      <div class="metatube-result-grid">
+        <div v-for="result in metaTubeStore.searchResults" :key="result.id + result.provider" class="metatube-result-cell">
           <a-card hoverable size="small" style="overflow: hidden" @click="handleResultClick(result)">
             <template #cover>
               <MediaImage :src="result.thumb_url || result.cover_url" alt="cover" :fallback="result.number"
@@ -34,11 +34,40 @@
               演员: {{ result.actors.join('、') }}
             </div>
           </a-card>
-        </a-col>
-      </a-row>
+        </div>
+      </div>
     </a-spin>
   </a-modal>
 </template>
+
+<style scoped>
+.metatube-result-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.metatube-result-cell {
+  flex: 1 1 clamp(180px, 20vw, 250px);
+  min-width: 180px;
+  max-width: 250px;
+}
+
+.metatube-result-cell :deep(.ant-card) {
+  width: 100%;
+}
+
+.metatube-result-cell :deep(.ant-card-meta-title),
+.metatube-result-cell :deep(.ant-card-meta-description) {
+  min-width: 0;
+}
+
+.metatube-result-cell :deep(.ant-card-meta-title) > div,
+.metatube-result-cell :deep(.ant-card-meta-description) > div {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+</style>
 
 <script setup lang="ts">
 import { ref } from 'vue'

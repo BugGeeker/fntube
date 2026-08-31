@@ -44,14 +44,19 @@ func (h *ScrapeLogHandler) list(ctx context.Context, c *app.RequestContext) {
 		pageSize = 20
 	}
 
+	query := h.db.Model(&model.ScrapeLog{})
+	if number := string(c.Query("number")); number != "" {
+		query = query.Where("number LIKE ?", "%"+number+"%")
+	}
+
 	var total int64
-	if err := h.db.Model(&model.ScrapeLog{}).Count(&total).Error; err != nil {
+	if err := query.Count(&total).Error; err != nil {
 		c.JSON(500, map[string]string{"error": err.Error()})
 		return
 	}
 
 	var logs []model.ScrapeLog
-	if err := h.db.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&logs).Error; err != nil {
+	if err := query.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&logs).Error; err != nil {
 		c.JSON(500, map[string]string{"error": err.Error()})
 		return
 	}

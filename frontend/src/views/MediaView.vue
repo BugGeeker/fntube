@@ -14,8 +14,8 @@
         </a-space>
       </template>
       <a-spin :spinning="store.loading">
-        <a-row :gutter="[16, 16]">
-          <a-col v-for="lib in store.libraries" :key="lib.id" :xs="12" :sm="8" :md="6" :lg="4" :xl="3" :xxl="2">
+        <div class="media-library-grid">
+          <div v-for="lib in store.libraries" :key="lib.id" class="media-library-item">
             <a-card hoverable size="small" @click="enterLibrary(lib)">
               <template #cover>
                 <MediaImage :src="lib.image_list?.[0]" :alt="lib.name" ratio="2 / 3" />
@@ -27,8 +27,8 @@
                 </template>
               </a-card-meta>
             </a-card>
-          </a-col>
-        </a-row>
+          </div>
+        </div>
         <a-empty v-if="!store.loading && store.libraries.length === 0" description="暂无媒体库，请先在配置页设置连接" />
       </a-spin>
     </a-card>
@@ -107,6 +107,22 @@ async function handleRefresh() {
 </script>
 
 <style scoped>
+.media-library-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.media-library-item {
+  flex: 1 1 clamp(180px, 20vw, 250px);
+  min-width: 180px;
+  max-width: 250px;
+}
+
+.media-library-item :deep(.ant-card) {
+  width: 100%;
+}
+
 :deep(.ant-col) {
   min-width: 0;
 }
@@ -125,8 +141,11 @@ async function handleRefresh() {
 }
 
 :deep(.ant-card-meta-title) {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+:deep(.ant-card-meta-title) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 </style>

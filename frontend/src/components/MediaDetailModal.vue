@@ -199,7 +199,7 @@
           </template>
           搜索
         </a-button>
-        <a-button :loading="editLoading" @click="handleEdit(item!)">
+        <a-button @click="handleEdit(item!)">
           <template #icon>
             <EditOutlined />
           </template>
@@ -231,7 +231,6 @@ const searchModalRef = ref<typeof MetaTubeSearchModal>()
 
 const visible = ref(false)
 const loading = ref(false)
-const editLoading = ref(false)
 const scraping = ref(false)
 const persons = ref<Person[]>([])
 const seasons = ref<Season[]>([])
@@ -437,7 +436,6 @@ async function loadStreamInfo() {
 
 // 刮削：调用后端异步刮削接口
 async function handleScrape(item: MediaItem) {
-  editLoading.value = true
   scraping.value = true
   try {
     const { data } = await rescrapeItem(item.guid)

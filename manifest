@@ -1,10 +1,11 @@
 appname               = FnTube
-version               = 1.0.1
+version               = 1.0.3
 display_name          = FnTube
-desc                  = FnTube - 飞牛应用包，基于 Go + Hertz + SQLite 后端与 Vue3 + Ant Design Vue 前端
+desc                  = FnTube - 飞牛影视媒体刮削工具，支持 MetaTube 搜索、媒体信息编辑、自动刮削计划与刮削记录管理
 platform              = x86
 source                = thirdparty
 maintainer            = BugGeeker
+maintainer_url        ="https://github.com/bugGeeker/fntube"
 distributor           = BugGeeker
 desktop_uidir         = ui
 desktop_applaunchname = FnTube.Application

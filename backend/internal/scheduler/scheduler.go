@@ -3,7 +3,10 @@ package scheduler
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/draw"
@@ -640,9 +643,28 @@ func (s *Scheduler) applyTranslation(detail *trimmedia.EditDetail, info *metatub
 	return nil
 }
 
+func getImage(url string) (*http.Response, error) {
+	resp, err := http.Get(url)
+	if err == nil {
+		return resp, nil
+	}
+
+	var certErr x509.UnknownAuthorityError
+	if !errors.As(err, &certErr) {
+		return nil, err
+	}
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+	return client.Get(url)
+}
+
 // downloadAndUploadPoster 下载封面、按关键词添加徽标并上传到飞牛。
 func (s *Scheduler) downloadAndUploadPoster(url, keyword string) (string, error) {
-	resp, err := http.Get(url)
+	resp, err := getImage(url)
 	if err != nil {
 		return "", err
 	}

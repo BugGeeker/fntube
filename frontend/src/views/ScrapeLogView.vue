@@ -2,11 +2,15 @@
   <div>
     <a-card title="刮削记录">
       <template #extra>
-        <a-button :loading="loading" @click="loadLogs">
-          <template #icon>
-            <ReloadOutlined />
-          </template>
-        </a-button>
+        <a-space>
+          <a-input-search v-model:value="numberQuery" placeholder="按番号查询" allow-clear enter-button="查询"
+            style="width: 240px" @search="handleSearch" />
+          <a-button :loading="loading" @click="loadLogs">
+            <template #icon>
+              <ReloadOutlined />
+            </template>
+          </a-button>
+        </a-space>
       </template>
       <a-spin :spinning="loading">
         <a-table :dataSource="logs" :columns="columns" rowKey="id" :pagination="pagination" @change="handleTableChange"
@@ -78,6 +82,7 @@ import { ReloadOutlined } from '@ant-design/icons-vue'
 import MediaDetailModal from '@/components/MediaDetailModal.vue'
 
 const loading = ref(false)
+const numberQuery = ref('')
 const logs = ref<ScrapeLog[]>([])
 const currentPage = ref(1)
 const pageSize = ref(20)
@@ -134,13 +139,8 @@ function parseSteps(stepsStr: string): ScrapeStep[] {
 function stepsSummary(stepsStr: string): string {
   const steps = parseSteps(stepsStr)
   if (steps.length === 0) return '-'
-  const success = steps.filter(s => s.status === 'success').length
-  const failed = steps.filter(s => s.status === 'failed').length
-  const running = steps.filter(s => s.status === 'running').length
-  const parts: string[] = [`${success}/${steps.length} 成功`]
-  if (failed > 0) parts.push(`${failed} 失败`)
-  if (running > 0) parts.push(`${running} 进行中`)
-  return parts.join('，')
+  const total = steps.length
+  return `${total}/6`
 }
 
 function stepsBadgeStatus(stepsStr: string): string {
@@ -153,7 +153,7 @@ function stepsBadgeStatus(stepsStr: string): string {
 async function loadLogs() {
   loading.value = true
   try {
-    const { data } = await getScrapeLogs(currentPage.value, pageSize.value)
+    const { data } = await getScrapeLogs(currentPage.value, pageSize.value, numberQuery.value.trim())
     logs.value = data.items || []
     total.value = data.total
     pagination.value.current = currentPage.value
@@ -164,6 +164,11 @@ async function loadLogs() {
   } finally {
     loading.value = false
   }
+}
+
+function handleSearch() {
+  currentPage.value = 1
+  loadLogs()
 }
 
 function handleTableChange(pag: { current: number; pageSize: number }) {
