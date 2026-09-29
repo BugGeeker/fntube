@@ -69,7 +69,7 @@ jobs:
           echo "$RUNNER_TEMP/fnpack" >> "$GITHUB_PATH"
 
       - name: Validate fnpack
-        run: fnpack --version
+        run: fnpack --help
 
       - name: Package FPK
         run: fnpack build --directory "$GITHUB_WORKSPACE"
