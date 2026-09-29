@@ -100,6 +100,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
