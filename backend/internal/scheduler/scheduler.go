@@ -590,30 +590,30 @@ func (s *Scheduler) importPerson(name string) (string, string, error) {
 	defer mtClient.Close()
 
 	actors, err := mtClient.SearchActors(name)
-	if err != nil || len(actors) == 0 {
-		return "", "", fmt.Errorf("未找到演员")
-	}
-
-	actor := actors[0]
-	var imageURL string
-	if len(actor.Images) > 0 {
-		imageURL = actor.Images[0]
-	}
-
 	var profilePath string
-	if imageURL != "" {
-		imgResp, err := http.Get(imageURL)
-		if err == nil && imgResp.StatusCode == http.StatusOK {
-			imgData, _ := io.ReadAll(imgResp.Body)
-			imgResp.Body.Close()
-			filename := "actor_profile.jpg"
-			if idx := strings.LastIndex(imageURL, "/"); idx >= 0 {
-				filename = imageURL[idx+1:]
-				if filename == "" || !strings.Contains(filename, ".") {
-					filename = "actor_profile.jpg"
+	if err != nil || len(actors) == 0 {
+		log.Printf("[scheduler] MetaTube 未找到演员 %s，跳过头像上传并继续创建", name)
+	} else {
+		actor := actors[0]
+		var imageURL string
+		if len(actor.Images) > 0 {
+			imageURL = actor.Images[0]
+		}
+
+		if imageURL != "" {
+			imgResp, err := getImage(imageURL)
+			if err == nil && imgResp.StatusCode == http.StatusOK {
+				imgData, _ := io.ReadAll(imgResp.Body)
+				imgResp.Body.Close()
+				filename := "actor_profile.jpg"
+				if idx := strings.LastIndex(imageURL, "/"); idx >= 0 {
+					filename = imageURL[idx+1:]
+					if filename == "" || !strings.Contains(filename, ".") {
+						filename = "actor_profile.jpg"
+					}
 				}
+				profilePath, _ = s.service.UploadImage(imgData, filename, "poster")
 			}
-			profilePath, _ = s.service.UploadImage(imgData, filename, "poster")
 		}
 	}
 
