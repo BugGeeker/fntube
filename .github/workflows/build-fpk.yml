@@ -1,0 +1,83 @@
+name: Build FnTube FPK
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-fpk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Linux backend
+        working-directory: backend
+        env:
+          CGO_ENABLED: 0
+          GOOS: linux
+          GOARCH: amd64
+        run: go build -o ../app/server/fntube .
+
+      - name: Build frontend
+        working-directory: frontend
+        run: pnpm run build
+
+      - name: Install fnpack
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/fnpack"
+          curl --fail --location --retry 3 \
+            "${{ vars.FNPACK_DOWNLOAD_URL }}" \
+            --output "$RUNNER_TEMP/fnpack/fnpack"
+          chmod +x "$RUNNER_TEMP/fnpack/fnpack"
+          echo "$RUNNER_TEMP/fnpack" >> "$GITHUB_PATH"
+
+      - name: Validate fnpack
+        run: fnpack --version
+
+      - name: Package FPK
+        run: fnpack build --directory "$GITHUB_WORKSPACE"
+
+      - name: Upload FPK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FnTube-fpk
+          path: FnTube.fpk
+          if-no-files-found: error
+          retention-days: 30
