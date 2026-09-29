@@ -81,3 +81,31 @@ jobs:
           path: FnTube.fpk
           if-no-files-found: error
           retention-days: 30
+
+  publish-release:
+    needs: build-fpk
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download FPK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: FnTube-fpk
+          path: release
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "release/FnTube.fpk" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "release/FnTube.fpk" \
+              --verify-tag \
+              --generate-notes
+          fi
