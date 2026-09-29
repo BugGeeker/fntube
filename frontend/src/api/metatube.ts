@@ -8,6 +8,8 @@ export interface MetaTubeConfig {
   translate_mode: string
   translate_engine: string
   engine_config: string
+  scrape_fields: string[]
+  scrape_ignore_locked: boolean
 }
 
 // 引擎专属配置

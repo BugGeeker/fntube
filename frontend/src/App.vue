@@ -5,7 +5,7 @@
       <div class="floating-menu">
         <a-menu v-model:selectedKeys="selectedKeys" mode="inline" :inline-collapsed="collapsed" :items="menuItems"
           @click="handleMenuClick" class="menu" />
-        <div class="menu-footer" :class="{ 'menu-footer-collapsed': collapsed }">
+        <div class="menu-footer" :class="{ 'menu-footer-collapsed': collapsed }" role="contentinfo">
           <div class="menu-actions">
             <a-switch v-model:checked="hideImagesChecked" checked-children="隐图" un-checked-children="显图" />
             <a-button :type="uiStore.darkMode ? 'primary' : 'default'" shape="circle" size="small"
@@ -17,6 +17,15 @@
           </div>
           <span v-if="appVersion" class="app-version">v{{ appVersion }}</span>
         </div>
+      </div>
+
+      <!-- 移动端底部导航 -->
+      <div class="mobile-tabbar">
+        <button v-for="item in mobileTabItems" :key="item.key" class="mobile-tab"
+          :class="{ active: mobileSelectedKey === item.key }" @click="handleMenuClick({ key: item.key })">
+          <component :is="item.icon" />
+          <span>{{ item.label }}</span>
+        </button>
       </div>
 
       <!-- 主内容区 -->
@@ -118,6 +127,19 @@ const menuItems = [
   },
 ]
 
+const mobileTabItems = [
+  { key: '/', icon: DashboardOutlined, label: '总览' },
+  { key: '/media', icon: VideoCameraOutlined, label: '媒体浏览' },
+  { key: '/scrape-log', icon: FileTextOutlined, label: '刮削记录' },
+  { key: '/scrape-task', icon: ScheduleOutlined, label: '刮削计划' },
+  { key: '/settings', icon: SettingOutlined, label: '配置' },
+]
+
+const mobileSelectedKey = computed(() => {
+  if (['/settings', '/config', '/metatube-config'].includes(route.path)) return '/settings'
+  return getMenuKey(route.path)
+})
+
 const selectedKeys = ref<string[]>([getMenuKey(route.path)])
 
 function getMenuKey(path: string): string {
@@ -203,5 +225,54 @@ function handleMenuClick({ key }: { key: string }) {
   overflow-x: hidden;
   padding: 12px;
   height: 100vh;
+}
+
+.mobile-tabbar {
+  display: none;
+}
+
+@media (max-width: 639px) {
+  .floating-menu {
+    display: none;
+  }
+
+  .main-content {
+    height: 100vh;
+    padding: 8px 8px calc(72px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-tabbar {
+    position: fixed;
+    z-index: 1000;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    padding: 6px 4px env(safe-area-inset-bottom);
+    background: v-bind('token.colorBgContainer');
+    border-top: 1px solid v-bind('token.colorBorderSecondary');
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.08);
+  }
+
+  .mobile-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 0;
+    color: v-bind('token.colorTextSecondary');
+    font-size: 11px;
+    background: transparent;
+    border: 0;
+  }
+
+  .mobile-tab :deep(svg) {
+    font-size: 20px;
+  }
+
+  .mobile-tab.active {
+    color: v-bind('token.colorPrimary');
+  }
 }
 </style>

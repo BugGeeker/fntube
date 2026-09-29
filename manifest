@@ -1,5 +1,5 @@
 appname               = FnTube
-version               = 1.0.3
+version               = 1.0.7
 display_name          = FnTube
 desc                  = FnTube - 飞牛影视媒体刮削工具，支持 MetaTube 搜索、媒体信息编辑、自动刮削计划与刮削记录管理
 platform              = x86

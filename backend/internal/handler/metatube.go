@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
@@ -34,12 +35,14 @@ func RegisterMetaTubeHandlers(h *server.Hertz, db *gorm.DB) {
 
 // metaTubeConfigView 配置视图，避免暴露 Token 详情
 type metaTubeConfigView struct {
-	ID              uint   `json:"id"`
-	Host            string `json:"host"`
-	Token           string `json:"token"`
-	TranslateMode   string `json:"translate_mode"`
-	TranslateEngine string `json:"translate_engine"`
-	EngineConfig    string `json:"engine_config"`
+	ID                 uint   `json:"id"`
+	Host               string `json:"host"`
+	Token              string `json:"token"`
+	TranslateMode      string `json:"translate_mode"`
+	TranslateEngine    string `json:"translate_engine"`
+	EngineConfig       string `json:"engine_config"`
+	ScrapeFields       string `json:"scrape_fields"`
+	ScrapeIgnoreLocked bool   `json:"scrape_ignore_locked"`
 }
 
 // getConfig 获取 MetaTube 配置
@@ -52,15 +55,32 @@ func (h *MetaTubeHandler) getConfig(ctx context.Context, c *app.RequestContext) 
 // saveConfig 保存 MetaTube 配置
 func (h *MetaTubeHandler) saveConfig(ctx context.Context, c *app.RequestContext) {
 	var req struct {
-		Host            string `json:"host"`
-		Token           string `json:"token"`
-		TranslateMode   string `json:"translate_mode"`
-		TranslateEngine string `json:"translate_engine"`
-		EngineConfig    string `json:"engine_config"`
+		Host               string `json:"host"`
+		Token              string `json:"token"`
+		TranslateMode      string `json:"translate_mode"`
+		TranslateEngine    string `json:"translate_engine"`
+		EngineConfig       string `json:"engine_config"`
+		ScrapeFields       string `json:"scrape_fields"`
+		ScrapeIgnoreLocked bool   `json:"scrape_ignore_locked"`
 	}
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(400, map[string]string{"error": err.Error()})
 		return
+	}
+
+	if req.ScrapeFields != "" {
+		var fields []string
+		if err := json.Unmarshal([]byte(req.ScrapeFields), &fields); err != nil {
+			c.JSON(400, map[string]string{"error": "刮削字段格式无效"})
+			return
+		}
+		valid := map[string]bool{"title": true, "summary": true, "rating": true, "content_rating": true, "release_date": true, "genres": true, "poster": true, "backdrop": true, "actors": true}
+		for _, field := range fields {
+			if !valid[field] {
+				c.JSON(400, map[string]string{"error": "无效的刮削字段"})
+				return
+			}
+		}
 	}
 
 	// 校验翻译模式
@@ -85,11 +105,13 @@ func (h *MetaTubeHandler) saveConfig(ctx context.Context, c *app.RequestContext)
 	_ = row.Scan(&id)
 
 	values := map[string]interface{}{
-		"host":             req.Host,
-		"token":            req.Token,
-		"translate_mode":   req.TranslateMode,
-		"translate_engine": req.TranslateEngine,
-		"engine_config":    req.EngineConfig,
+		"host":                 req.Host,
+		"token":                req.Token,
+		"translate_mode":       req.TranslateMode,
+		"translate_engine":     req.TranslateEngine,
+		"engine_config":        req.EngineConfig,
+		"scrape_fields":        req.ScrapeFields,
+		"scrape_ignore_locked": req.ScrapeIgnoreLocked,
 	}
 
 	if id > 0 {

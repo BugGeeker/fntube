@@ -13,9 +13,10 @@
         </a-space>
       </template>
       <a-spin :spinning="loading">
-        <a-table :dataSource="logs" :columns="columns" rowKey="id" :pagination="pagination" @change="handleTableChange"
-          table-layout="fixed" :scroll="{ x: '100%' }">
-          <template #bodyCell="{ column, record }">
+        <div class="desktop-table">
+          <a-table :dataSource="logs" :columns="columns" rowKey="id" :pagination="pagination" @change="handleTableChange"
+            table-layout="fixed" :scroll="{ x: '100%' }">
+            <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'title'">
               <a @click="showDetail(record)">{{ record.title }}</a>
             </template>
@@ -62,8 +63,27 @@
                 <a-button danger size="small" @click="handleDelete(record)">删除</a-button>
               </a-space>
             </template>
-          </template>
-        </a-table>
+            </template>
+          </a-table>
+        </div>
+        <div class="mobile-cards">
+          <a-card v-for="record in logs" :key="record.id" size="small" class="log-card">
+            <div class="card-title" @click="showDetail(record)">{{ record.title || record.number }}</div>
+            <div class="card-meta">{{ record.number }} · {{ formatDate(record.created_at) }}</div>
+            <div class="card-row">
+              <a-tag :color="record.method === 'auto' ? 'green' : 'blue'">{{ record.method === 'auto' ? '自动' : '手动' }}</a-tag>
+              <a-tag v-if="record.status === 'success'" color="green">成功</a-tag><a-tag v-else-if="record.status === 'failed'" color="red">失败</a-tag><a-tag v-else-if="record.status === 'completed'" color="blue">完成</a-tag><a-badge v-else-if="record.status === 'in_progress'" :status="stepsBadgeStatus(record.steps)" :text="stepsSummary(record.steps)" /><span v-else>{{ record.status }}</span>
+            </div>
+            <div v-if="parseSteps(record.steps).length" class="steps-list">
+              <a-tag v-for="(s, i) in parseSteps(record.steps)" :key="i"
+                :color="s.status === 'success' ? 'green' : s.status === 'failed' ? 'red' : s.status === 'running' ? 'processing' : 'default'">
+                {{ stepLabel(s.step) }}：{{ s.status === 'success' ? '成功' : s.status === 'failed' ? '失败' : s.status === 'running' ? '进行中' : s.status }}
+              </a-tag>
+            </div>
+            <a-space class="card-actions"><a-button size="small" :loading="rescrapingGuid === record.item_guid" @click="handleRescrape(record)">重新刮削</a-button><a-button danger size="small" @click="handleDelete(record)">删除</a-button></a-space>
+          </a-card>
+          <a-pagination v-if="total > 0" v-model:current="pagination.current" v-model:page-size="pagination.pageSize" :total="total" show-size-changer @change="handleTableChange" />
+        </div>
       </a-spin>
     </a-card>
 
@@ -211,3 +231,18 @@ onMounted(() => {
   loadLogs()
 })
 </script>
+
+<style scoped>
+.mobile-cards { display: none; }
+.card-title { font-weight: 600; color: #1677ff; cursor: pointer; }
+.card-meta { margin: 4px 0 8px; color: #999; font-size: 12px; }
+.card-row { display: flex; justify-content: flex-start; align-items: center; margin: 6px 0; }
+.steps-list { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; color: #666; font-size: 12px; }
+.card-actions { margin-top: 8px; }
+@media (max-width: 639px) {
+  .desktop-table { display: none; }
+  .mobile-cards { display: block; }
+  .log-card { margin-bottom: 8px; }
+  .mobile-cards :deep(.ant-pagination) { margin: 16px 0 4px; text-align: center; }
+}
+</style>

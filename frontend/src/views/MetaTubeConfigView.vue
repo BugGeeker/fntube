@@ -12,6 +12,14 @@
         <a-input v-model:value="form.token" placeholder="MetaTube 服务端 Token（非必填）" allow-clear />
       </a-form-item>
     </a-card>
+    <a-card title="刮削设置" style="margin-top: 16px">
+      <a-form-item label="刮削字段" name="scrape_fields">
+        <a-checkbox-group v-model:value="form.scrape_fields" :options="scrapeFieldOptions" />
+      </a-form-item>
+      <a-form-item label="忽略字段锁定" name="scrape_ignore_locked">
+        <a-switch v-model:checked="form.scrape_ignore_locked" />
+      </a-form-item>
+    </a-card>
     <a-card title="翻译设置" style="margin-top: 16px">
       <!-- 翻译模式 -->
       <a-form-item label="翻译模式" name="translate_mode">
@@ -81,6 +89,13 @@ const store = useMetaTubeStore()
 
 const translateModeOptions = TranslateModeOptions
 const translateEngineOptions = TranslateEngineOptions
+const scrapeFieldOptions = [
+  { label: '标题', value: 'title' }, { label: '简介', value: 'summary' },
+  { label: '评分', value: 'rating' }, { label: '内容分级', value: 'content_rating' },
+  { label: '发行日期', value: 'release_date' }, { label: '类型', value: 'genres' },
+  { label: '封面', value: 'poster' }, { label: '背景图', value: 'backdrop' }, { label: '演员', value: 'actors' },
+]
+const defaultScrapeFields = scrapeFieldOptions.map(item => item.value)
 
 const form = reactive<MetaTubeConfig>({
   host: '',
@@ -88,6 +103,8 @@ const form = reactive<MetaTubeConfig>({
   translate_mode: 'none',
   translate_engine: 'baidu',
   engine_config: '{}',
+  scrape_fields: [...defaultScrapeFields],
+  scrape_ignore_locked: false,
 })
 
 const engineConfig = reactive<Record<string, string>>({
@@ -109,6 +126,10 @@ onMounted(async () => {
     await store.fetchConfig()
     if (store.config) {
       Object.assign(form, store.config)
+      if (typeof (store.config as any).scrape_fields === 'string') {
+        try { form.scrape_fields = JSON.parse((store.config as any).scrape_fields) } catch { form.scrape_fields = [...defaultScrapeFields] }
+      }
+      if (!form.scrape_fields?.length) form.scrape_fields = [...defaultScrapeFields]
       // 解析 engine_config
       try {
         const ec = JSON.parse(store.config.engine_config || '{}')
@@ -152,8 +173,8 @@ async function handleSave() {
 
   saving.value = true
   try {
-    const data = { ...form, engine_config: buildEngineConfig() }
-    await store.saveConfigData(data)
+    const data = { ...form, scrape_fields: JSON.stringify(form.scrape_fields), engine_config: buildEngineConfig() }
+    await store.saveConfigData(data as unknown as MetaTubeConfig)
     message.success('配置已保存')
   } catch (e: any) {
     message.error('保存失败: ' + (e?.message || ''))

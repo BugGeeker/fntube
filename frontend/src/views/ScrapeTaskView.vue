@@ -18,8 +18,9 @@
         </a-space>
       </template>
       <a-spin :spinning="loading">
-        <a-table :dataSource="tasks" :columns="columns" rowKey="id" :pagination="false" :scroll="{ x: '100%' }">
-          <template #bodyCell="{ column, record }">
+        <div class="desktop-table">
+          <a-table :dataSource="tasks" :columns="columns" rowKey="id" :pagination="false" :scroll="{ x: '100%' }">
+            <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'enabled'">
               <a-tag v-if="record.enabled" color="green">启用</a-tag>
               <a-tag v-else color="default">停用</a-tag>
@@ -43,8 +44,20 @@
                 </a-popconfirm>
               </a-space>
             </template>
-          </template>
-        </a-table>
+            </template>
+          </a-table>
+        </div>
+        <div class="mobile-cards">
+          <a-card v-for="task in tasks" :key="task.id" size="small" class="task-card">
+            <div class="card-title">{{ task.name }}</div>
+            <div class="card-row"><span>媒体库</span><span>{{ task.library_name }}</span></div>
+            <div class="card-row"><span>扫描频率</span><span>{{ task.interval }} 分钟</span></div>
+            <div class="card-row"><span>状态</span><a-tag :color="task.enabled ? 'green' : 'default'">{{ task.enabled ? '启用' : '停用' }}</a-tag></div>
+            <div class="card-row"><span>运行状态</span><a-tag :color="task.is_running ? 'processing' : 'default'">{{ task.is_running ? '运行中' : '空闲中' }}</a-tag></div>
+            <div class="card-row"><span>上次执行</span><span>{{ task.last_run_at ? formatDateTime(task.last_run_at) : '-' }}</span></div>
+            <a-space class="card-actions"><a-button size="small" @click="handleRun(task)" :loading="runningId === task.id" :disabled="task.is_running">执行</a-button><a-button size="small" @click="openEdit(task)">编辑</a-button><a-popconfirm title="确认删除？" @confirm="handleDelete(task)"><a-button danger size="small">删除</a-button></a-popconfirm></a-space>
+          </a-card>
+        </div>
       </a-spin>
     </a-card>
 
@@ -73,7 +86,7 @@
       v-model:open="showRunRecords"
       title="运行记录"
       placement="right"
-      width="700"
+      width="400"
     >
       <a-spin :spinning="runRecordLoading">
         <a-table
@@ -84,6 +97,7 @@
           @change="handleRunRecordTableChange"
           size="small"
           :scroll="{ x: '100%' }"
+          class="run-record-table"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'start_time'">
@@ -105,8 +119,19 @@
               <a-tag v-else-if="record.status === 'error'" color="red">错误</a-tag>
               <a-tag v-else color="default">{{ record.status }}</a-tag>
             </template>
-          </template>
-        </a-table>
+            </template>
+          </a-table>
+        <div class="mobile-cards run-record-cards">
+          <a-card v-for="record in runRecords" :key="record.id" size="small" class="task-card">
+            <div class="card-title">{{ record.task_name }}</div>
+            <div class="card-row"><span>媒体库</span><span>{{ record.library_name }}</span></div>
+            <div class="card-row"><span>开始时间</span><span>{{ formatDateTime(record.start_time) }}</span></div>
+            <div class="card-row"><span>运行时长</span><span>{{ formatDuration(record.duration) }}</span></div>
+            <div class="card-row"><span>数量</span><a-space size="small"><a-tag color="green" @click="openDetail(record.id, 'completed')">{{ record.completed_count }}完成</a-tag><a-tag color="blue" @click="openDetail(record.id, 'success')">{{ record.success_count }}成功</a-tag><a-tag v-if="record.failed_count > 0" color="red" @click="openDetail(record.id, 'failed')">{{ record.failed_count }}失败</a-tag></a-space></div>
+            <div class="card-row"><span>状态</span><a-tag :color="record.status === 'done' ? 'green' : record.status === 'error' ? 'red' : record.status === 'running' ? 'processing' : 'default'">{{ record.status === 'done' ? '完成' : record.status === 'error' ? '错误' : record.status === 'running' ? '运行中' : record.status }}</a-tag></div>
+          </a-card>
+          <a-pagination v-if="runRecordPagination.total > 0" v-model:current="runRecordPagination.current" v-model:page-size="runRecordPagination.pageSize" :total="runRecordPagination.total" show-size-changer @change="handleRunRecordTableChange" />
+        </div>
       </a-spin>
     </a-drawer>
 
@@ -149,6 +174,7 @@
           rowKey="id"
           :pagination="{ pageSize: 50, hideOnSinglePage: true }"
           size="small"
+          class="detail-table"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'status'">
@@ -167,8 +193,17 @@
             <template v-if="column.key === 'created_at'">
               {{ formatDate(record.created_at) }}
             </template>
-          </template>
-        </a-table>
+            </template>
+          </a-table>
+        <div class="mobile-cards detail-cards">
+          <a-card v-for="record in detailLogs" :key="record.id" size="small" class="task-card">
+            <div class="card-title">{{ record.title }}</div>
+            <div class="card-row"><span>番号</span><span>{{ record.number }}</span></div>
+            <div class="card-row"><span>状态</span><a-tag :color="record.status === 'success' ? 'green' : record.status === 'failed' ? 'red' : record.status === 'completed' ? 'blue' : record.status === 'in_progress' ? 'processing' : 'default'">{{ record.status === 'success' ? '成功' : record.status === 'failed' ? '失败' : record.status === 'completed' ? '完成' : record.status === 'in_progress' ? '刮削中' : record.status }}</a-tag></div>
+            <div class="card-row"><span>刮削时间</span><span>{{ formatDate(record.created_at) }}</span></div>
+            <div v-if="record.error" class="error-text">{{ truncate(record.error, 100) }}</div>
+          </a-card>
+        </div>
       </a-spin>
     </a-drawer>
   </div>
@@ -422,3 +457,17 @@ watch(showRunRecords, (val) => {
   }
 })
 </script>
+
+<style scoped>
+.mobile-cards { display: none; }
+.card-title { font-weight: 600; }
+.card-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 7px 0; }
+.card-actions { margin-top: 10px; }
+.error-text { color: #ff4d4f; margin-top: 6px; }
+@media (max-width: 639px) {
+  .desktop-table, .run-record-table, .detail-table { display: none; }
+  .mobile-cards { display: block; }
+  .task-card { margin-bottom: 8px; }
+  .mobile-cards :deep(.ant-pagination) { margin: 16px 0 4px; text-align: center; }
+}
+</style>

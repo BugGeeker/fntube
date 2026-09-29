@@ -73,7 +73,7 @@
           <a-col
             v-for="item in latestItems"
             :key="item.id"
-            :xs="24" :sm="12" :md="12" :lg="8" :xl="6" :xxl="4"
+            :xs="12" :sm="12" :md="12" :lg="8" :xl="6" :xxl="4"
           >
             <div class="media-card" @click="openItem(item)">
               <MediaImage

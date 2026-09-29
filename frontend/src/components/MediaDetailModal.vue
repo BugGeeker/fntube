@@ -105,6 +105,14 @@
               </template>
             </template>
           </a-table>
+          <div class="stream-cards">
+            <a-card v-for="record in streamInfo.files" :key="record.guid" size="small" class="stream-card">
+              <div class="stream-title">{{ record.file_name }}</div>
+              <div class="stream-row"><span>大小</span><span>{{ formatFileSize(record.size) }}</span></div>
+              <div class="stream-row"><span>路径</span><span class="path-text">{{ record.path }}</span></div>
+              <div class="stream-row"><span>状态</span><a-tag :color="record.can_play === 1 ? 'green' : 'red'">{{ record.can_play === 1 ? '可播放' : '不可播放' }}</a-tag></div>
+            </a-card>
+          </div>
         </div>
 
         <!-- 视频流信息 -->
@@ -138,6 +146,17 @@
               </template>
             </template>
           </a-table>
+          <div class="stream-cards">
+            <a-card v-for="record in streamInfo.video_streams" :key="record.guid" size="small" class="stream-card">
+              <div class="stream-row"><span>分辨率</span><span>{{ record.width }}×{{ record.height }}</span></div>
+              <div class="stream-row"><span>类型</span><a-tag :color="getResolutionColor(record.resolution_type)">{{ record.resolution_type }}</a-tag></div>
+              <div class="stream-row"><span>编码</span><span>{{ record.codec_name }}</span></div>
+              <div class="stream-row"><span>HDR</span><a-tag :color="getColorRangeColor(record.color_range_type)">{{ record.color_range_type }}</a-tag></div>
+              <div class="stream-row"><span>封装</span><span>{{ record.wrapper }}</span></div>
+              <div class="stream-row"><span>码率/帧率</span><span>{{ formatBps(record.bps) }} / {{ record.r_frame_rate }}</span></div>
+              <div class="stream-row"><span>时长/位深</span><span>{{ formatDuration(record.duration) }} / {{ record.bit_depth }}</span></div>
+            </a-card>
+          </div>
         </div>
 
         <!-- 音频流信息 -->
@@ -172,6 +191,15 @@
               </template>
             </template>
           </a-table>
+          <div class="stream-cards">
+            <a-card v-for="record in streamInfo.audio_streams" :key="record.guid" size="small" class="stream-card">
+              <div class="stream-row"><span>类型</span><a-tag :color="getAudioTypeColor(record.audio_type)">{{ record.audio_type }}</a-tag></div>
+              <div class="stream-row"><span>编码/语言</span><span>{{ record.codec_name }} / {{ record.language }}</span></div>
+              <div class="stream-row"><span>声道</span><span>{{ getChannelLayout(record.channels) }}</span></div>
+              <div class="stream-row"><span>采样率/码率</span><span>{{ record.sample_rate }} / {{ formatBps(record.bps) }}</span></div>
+              <div class="stream-row"><span>默认/时长</span><span>{{ record.is_default === 1 ? '默认' : '-' }} / {{ formatDuration(record.duration) }}</span></div>
+            </a-card>
+          </div>
         </div>
 
         <!-- 字幕流信息 -->
@@ -447,3 +475,16 @@ async function handleScrape(item: MediaItem) {
   }
 }
 </script>
+
+<style scoped>
+.stream-cards { display: none; }
+.stream-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin: 6px 0; }
+.stream-row > span:last-child { text-align: right; }
+.stream-title { font-weight: 600; margin-bottom: 8px; }
+.path-text { max-width: 70%; overflow-wrap: anywhere; font-family: monospace; font-size: 12px; }
+@media (max-width: 639px) {
+  .stream-cards { display: block; }
+  .stream-cards .stream-card { margin-bottom: 8px; }
+  :deep(.ant-table-wrapper) { display: none; }
+}
+</style>

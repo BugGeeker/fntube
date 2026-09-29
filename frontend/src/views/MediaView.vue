@@ -4,7 +4,7 @@
     <a-card title="媒体库">
       <template #extra>
         <a-space>
-          <a-input-search v-model:value="searchKeyword" placeholder="搜索媒体" enter-button="搜索" style="width: 300px"
+          <a-input-search v-model:value="searchKeyword" placeholder="搜索媒体" enter-button="搜索" style="width: 240px;"
             @search="handleSearch" />
           <a-button @click="handleRefresh">
             <template #icon>
@@ -38,7 +38,10 @@
       <a-spin :spinning="store.loading">
         <a-list :data-source="store.searchResults" bordered>
           <template #renderItem="{ item }">
-            <a-list-item style="cursor: pointer">
+            <a-list-item style="cursor: pointer" @click="showDetail(item)">
+              <template #extra>
+                <MediaImage :src="item.poster" :alt="item.title" ratio="2 / 3" class="search-result-poster" />
+              </template>
               <a-list-item-meta :title="item.title" :description="`${formatYear(item)} - ${item.type}`" />
             </a-list-item>
           </template>
@@ -48,6 +51,8 @@
         </a-list>
       </a-spin>
     </a-modal>
+
+    <MediaDetailModal ref="mediaDetailModalRef" />
   </div>
 </template>
 
@@ -58,6 +63,7 @@ import { message } from 'ant-design-vue'
 import { useTrimMediaStore } from '@/stores/trimmedia'
 import MediaImage from '@/components/MediaImage.vue'
 import type { Library, MediaItem } from '@/api/trimmedia'
+import MediaDetailModal from '@/components/MediaDetailModal.vue'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 
 const router = useRouter()
@@ -65,6 +71,7 @@ const store = useTrimMediaStore()
 
 const searchVisible = ref(false)
 const searchKeyword = ref('')
+const mediaDetailModalRef = ref<typeof MediaDetailModal>()
 
 onMounted(() => {
   store.fetchLibraries().catch(() => {
@@ -84,6 +91,11 @@ function typeColor(type: string): string {
 
 function enterLibrary(lib: Library) {
   router.push(`/media/${lib.id}`)
+}
+
+function showDetail(item: MediaItem) {
+  searchVisible.value = false
+  mediaDetailModalRef.value?.open(item.guid)
 }
 
 function formatYear(item: MediaItem): string {
@@ -114,13 +126,19 @@ async function handleRefresh() {
 }
 
 .media-library-item {
-  flex: 1 1 clamp(180px, 20vw, 250px);
-  min-width: 180px;
+  flex: 1 1 clamp(150px, 20vw, 250px);
+  min-width: 150px;
   max-width: 250px;
 }
 
 .media-library-item :deep(.ant-card) {
   width: 100%;
+}
+
+.search-result-poster {
+  width: 48px;
+  height: 72px;
+  overflow: hidden;
 }
 
 :deep(.ant-col) {

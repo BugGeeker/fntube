@@ -210,8 +210,8 @@ async function handleScrape(item: MediaItem) {
 }
 
 .media-item-cell {
-  flex: 1 1 clamp(180px, 20vw, 250px);
-  min-width: 180px;
+  flex: 1 1 clamp(150px, 20vw, 250px);
+  min-width: 150px;
   max-width: 250px;
 }
 

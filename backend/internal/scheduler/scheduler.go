@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"image"
 	"image/draw"
@@ -15,6 +13,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +27,31 @@ import (
 )
 
 // Scheduler 刮削计划任务调度器
+type scrapeConfig struct {
+	Host               string
+	Token              string
+	TranslateMode      string
+	TranslateEngine    string
+	EngineConfig       string
+	ScrapeFields       string
+	ScrapeIgnoreLocked bool
+}
+
+func (c scrapeConfig) fields() map[string]bool {
+	result := map[string]bool{}
+	var fields []string
+	if c.ScrapeFields == "" || json.Unmarshal([]byte(c.ScrapeFields), &fields) != nil {
+		for _, field := range []string{"title", "summary", "rating", "content_rating", "release_date", "genres", "poster", "backdrop", "actors"} {
+			result[field] = true
+		}
+		return result
+	}
+	for _, field := range fields {
+		result[field] = true
+	}
+	return result
+}
+
 type Scheduler struct {
 	db      *gorm.DB
 	service *trimmedia.Service
@@ -131,13 +155,7 @@ func (s *Scheduler) ScrapeSingle(itemGUID string) (string, error) {
 	}
 
 	// 读取 MetaTube 配置
-	var cfg struct {
-		Host            string
-		Token           string
-		TranslateMode   string
-		TranslateEngine string
-		EngineConfig    string
-	}
+	var cfg scrapeConfig
 	if err := s.db.Table("meta_tube_configs").Order("id desc").First(&cfg).Error; err != nil {
 		return "", fmt.Errorf("未配置 MetaTube")
 	}
@@ -156,7 +174,7 @@ func (s *Scheduler) ScrapeSingle(itemGUID string) (string, error) {
 	}
 
 	// 执行刮削
-	number, err := s.scrapeItem(*item, mtClient, cfg.TranslateMode, cfg.TranslateEngine, cfg.EngineConfig, genreMap, model.ScrapeMethodManual, 0)
+	number, err := s.scrapeItem(*item, mtClient, cfg, genreMap, model.ScrapeMethodManual, 0)
 	if err != nil {
 		return number, err
 	}
@@ -223,13 +241,7 @@ func (s *Scheduler) runTask(taskID uint) error {
 	}
 
 	// 读取 MetaTube 配置
-	var cfg struct {
-		Host            string
-		Token           string
-		TranslateMode   string
-		TranslateEngine string
-		EngineConfig    string
-	}
+	var cfg scrapeConfig
 	if err := s.db.Table("meta_tube_configs").Order("id desc").First(&cfg).Error; err != nil {
 		finishRecord(0, 0, 0, "error", "未配置 MetaTube")
 		return fmt.Errorf("未配置 MetaTube")
@@ -259,7 +271,7 @@ func (s *Scheduler) runTask(taskID uint) error {
 
 		log.Printf("[scheduler] 刮削: %s (%s)", item.Title, item.Guid)
 
-		_, err := s.scrapeItem(item, mtClient, cfg.TranslateMode, cfg.TranslateEngine, cfg.EngineConfig, genreMap, model.ScrapeMethodAuto, runRecord.ID)
+		_, err := s.scrapeItem(item, mtClient, cfg, genreMap, model.ScrapeMethodAuto, runRecord.ID)
 		if err != nil {
 			log.Printf("[scheduler] 刮削失败 %s: %v", item.Title, err)
 			failedCount++
@@ -301,7 +313,7 @@ func (s *Scheduler) getScrapedItems() (map[string]bool, error) {
 }
 
 // scrapeItem 对单个媒体项执行刮削，返回番号
-func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatube.Client, translateMode, translateEngine, engineConfig string, genreMap map[string]int, method string, taskRunID uint) (string, error) {
+func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatube.Client, cfg scrapeConfig, genreMap map[string]int, method string, taskRunID uint) (string, error) {
 	streamList, err := s.service.GetStreamList(item.Guid)
 	if err != nil {
 		return "", fmt.Errorf("获取媒体流信息失败: %w", err)
@@ -319,6 +331,7 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 		ItemGUID:  item.Guid,
 		Title:     item.Title,
 		Method:    method,
+		Number:    keyword,
 		TaskRunID: taskRunID,
 		Status:    model.ScrapeStatusInProgress,
 		Steps:     "[]",
@@ -397,23 +410,18 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 	}
 	addStep(model.StepGetDetail, "success", "")
 
-	// 更新日志中的番号
-	s.db.Model(&logEntry).Updates(map[string]interface{}{
-		"number":     info.Number,
-		"updated_at": time.Now(),
-	})
-
 	// 3. 获取编辑信息
 	detail, err := s.service.GetEditDetail(item.Guid)
 	if err != nil || detail == nil {
 		return info.Number, fmt.Errorf("获取编辑信息失败: %w", err)
 	}
 
-	// 4. 填入编辑信息（仅覆盖未锁定字段）
-	fillEditDetail(detail, info, genreMap)
+	// 4. 填入编辑信息
+	fields := cfg.fields()
+	fillEditDetail(detail, info, genreMap, fields, cfg.ScrapeIgnoreLocked)
 
 	// 5. 下载并上传图片（不阻塞后续流程）
-	if !detail.PostersLocked && (info.CoverURL != "" || info.BigCoverURL != "" || info.ThumbURL != "") {
+	if fields["poster"] && (cfg.ScrapeIgnoreLocked || !detail.PostersLocked) && (info.CoverURL != "" || info.BigCoverURL != "" || info.ThumbURL != "") {
 		posterURL := info.BigCoverURL
 		if posterURL == "" {
 			posterURL = info.CoverURL
@@ -429,7 +437,7 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 			addStep(model.StepDownloadPoster, "failed", err.Error())
 		}
 	}
-	if !detail.BackdropsLocked && (info.ThumbURL != "" || info.BigThumbURL != "") {
+	if fields["backdrop"] && (cfg.ScrapeIgnoreLocked || !detail.BackdropsLocked) && (info.ThumbURL != "" || info.BigThumbURL != "") {
 		backdropURL := info.BigThumbURL
 		if backdropURL == "" {
 			backdropURL = info.ThumbURL
@@ -444,7 +452,7 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 	}
 
 	// 6. 处理演职员（不阻塞后续流程）
-	if !detail.CreditsLocked && len(info.Actors) > 0 {
+	if fields["actors"] && (cfg.ScrapeIgnoreLocked || !detail.CreditsLocked) && len(info.Actors) > 0 {
 		addStep(model.StepSearchActor, "running", "")
 		if err := s.fillCredits(detail, info.Actors); err == nil {
 			addStep(model.StepSearchActor, "success", "")
@@ -454,14 +462,20 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 	}
 
 	// 7. 翻译（不阻塞后续流程）
-	if translateMode != "" && translateMode != "none" {
+	if cfg.TranslateMode != "" && cfg.TranslateMode != "none" {
 		addStep(model.StepTranslate, "running", "")
-		if err := s.applyTranslation(detail, info, mtClient, translateMode, translateEngine, engineConfig); err == nil {
+		if err := s.applyTranslation(detail, info, mtClient, cfg.TranslateMode, cfg.TranslateEngine, cfg.EngineConfig, cfg.ScrapeIgnoreLocked, fields); err == nil {
 			addStep(model.StepTranslate, "success", "")
 		} else {
 			addStep(model.StepTranslate, "failed", err.Error())
 		}
 	}
+
+	// 更新日志中的标题
+	s.db.Model(&logEntry).Updates(map[string]interface{}{
+		"title":      detail.Title,
+		"updated_at": time.Now(),
+	})
 
 	// 8. 保存
 	_, err = s.service.SaveEditDetail(detail)
@@ -488,26 +502,27 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 }
 
 // fillEditDetail 将 MetaTube 影片信息填入编辑详情
-func fillEditDetail(detail *trimmedia.EditDetail, info *metatube.MovieInfo, genreMap map[string]int) {
-	if !detail.TitleLocked && info.Number != "" {
+func fillEditDetail(detail *trimmedia.EditDetail, info *metatube.MovieInfo, genreMap map[string]int, fields map[string]bool, ignoreLocked bool) {
+	can := func(field string, locked bool) bool { return fields[field] && (ignoreLocked || !locked) }
+	if can("title", detail.TitleLocked) && info.Number != "" {
 		detail.Title = info.Number
 		if info.Title != "" {
 			detail.Title += " " + info.Title
 		}
 	}
-	if !detail.OverviewLocked && info.Summary != "" {
+	if can("summary", detail.OverviewLocked) && info.Summary != "" {
 		detail.Overview = info.Summary
 	}
-	if !detail.RatingLocked && info.Score > 0 {
+	if can("rating", detail.RatingLocked) && info.Score > 0 {
 		detail.Rating = info.Score
 	}
-	if !detail.ContentRatingLocked {
+	if can("content_rating", detail.ContentRatingLocked) {
 		detail.ContentRating = "JP-18+"
 	}
-	if !detail.AirDateLocked && info.ReleaseDate != "" {
+	if can("release_date", detail.AirDateLocked) && info.ReleaseDate != "" {
 		detail.AirDate = formatDate(info.ReleaseDate)
 	}
-	if !detail.GenresLocked && len(info.Genres) > 0 {
+	if can("genres", detail.GenresLocked) && len(info.Genres) > 0 {
 		var matched []int
 		for _, g := range info.Genres {
 			if id, ok := genreMap[g]; ok {
@@ -610,7 +625,7 @@ func (s *Scheduler) importPerson(name string) (string, string, error) {
 }
 
 // applyTranslation 根据翻译配置翻译标题和简介，返回错误（不阻塞，仅记录）
-func (s *Scheduler) applyTranslation(detail *trimmedia.EditDetail, info *metatube.MovieInfo, mtClient *metatube.Client, mode, engine, engineConfig string) error {
+func (s *Scheduler) applyTranslation(detail *trimmedia.EditDetail, info *metatube.MovieInfo, mtClient *metatube.Client, mode, engine, engineConfig string, ignoreLocked bool, fields map[string]bool) error {
 	if mode == "" || mode == "none" {
 		return nil
 	}
@@ -620,7 +635,7 @@ func (s *Scheduler) applyTranslation(detail *trimmedia.EditDetail, info *metatub
 
 	var errs []string
 
-	if shouldTranslateTitle && !detail.TitleLocked && info.Title != "" {
+	if shouldTranslateTitle && fields["title"] && (ignoreLocked || !detail.TitleLocked) && info.Title != "" {
 		result, err := mtClient.Translate(info.Title, "", "zh-CN", engine, engineConfig)
 		if err == nil && result != nil {
 			detail.Title = info.Number + " " + result.TranslatedText
@@ -628,7 +643,7 @@ func (s *Scheduler) applyTranslation(detail *trimmedia.EditDetail, info *metatub
 			errs = append(errs, "标题翻译失败: "+err.Error())
 		}
 	}
-	if shouldTranslateOverview && !detail.OverviewLocked && info.Summary != "" {
+	if shouldTranslateOverview && fields["summary"] && (ignoreLocked || !detail.OverviewLocked) && info.Summary != "" {
 		result, err := mtClient.Translate(info.Summary, "", "zh-CN", engine, engineConfig)
 		if err == nil && result != nil {
 			detail.Overview = result.TranslatedText
@@ -643,27 +658,26 @@ func (s *Scheduler) applyTranslation(detail *trimmedia.EditDetail, info *metatub
 	return nil
 }
 
-func getImage(url string) (*http.Response, error) {
-	resp, err := http.Get(url)
-	if err == nil {
-		return resp, nil
-	}
-
-	var certErr x509.UnknownAuthorityError
-	if !errors.As(err, &certErr) {
-		return nil, err
-	}
-
+func getImage(imageURL string) (*http.Response, error) {
 	client := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 	}
-	return client.Get(url)
+
+	req, err := http.NewRequest(http.MethodGet, imageURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if parsed, err := url.Parse(imageURL); err == nil {
+		req.Header.Set("Referer", parsed.Scheme+"://"+parsed.Host+"/")
+	}
+	return client.Do(req)
 }
 
 // downloadAndUploadPoster 下载封面、按关键词添加徽标并上传到飞牛。
 func (s *Scheduler) downloadAndUploadPoster(url, keyword string) (string, error) {
+	log.Printf("[scheduler] 下载封面图片: %s", url)
 	resp, err := getImage(url)
 	if err != nil {
 		return "", err
@@ -762,7 +776,7 @@ func (s *Scheduler) downloadAndUploadImage(url, imageType string) (string, error
 		return "", fmt.Errorf("仅支持 http/https")
 	}
 
-	resp, err := http.Get(url)
+	resp, err := getImage(url)
 	if err != nil {
 		return "", err
 	}

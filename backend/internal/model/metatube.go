@@ -4,9 +4,9 @@ import "time"
 
 // TranslateMode 翻译模式
 const (
-	TranslateModeNone          = "none"           // 不翻译
-	TranslateModeTitle         = "title"          // 仅标题
-	TranslateModeSummary       = "summary"        // 仅简介
+	TranslateModeNone            = "none"              // 不翻译
+	TranslateModeTitle           = "title"             // 仅标题
+	TranslateModeSummary         = "summary"           // 仅简介
 	TranslateModeTitleAndSummary = "title_and_summary" // 标题和简介
 )
 
@@ -21,14 +21,16 @@ const (
 
 // MetaTubeConfig MetaTube 配置
 type MetaTubeConfig struct {
-	ID             uint      `json:"id" gorm:"primaryKey"`
-	Host           string    `json:"host" gorm:"not null"`             // 服务地址
-	Token          string    `json:"token"`                            // API Token（非必填）
-	TranslateMode  string    `json:"translate_mode" gorm:"default:none"` // 翻译模式
-	TranslateEngine string   `json:"translate_engine" gorm:"default:baidu"` // 翻译引擎
-	EngineConfig   string    `json:"engine_config"`                    // 引擎专属配置（JSON）
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID                 uint      `json:"id" gorm:"primaryKey"`
+	Host               string    `json:"host" gorm:"not null"`                  // 服务地址
+	Token              string    `json:"token"`                                 // API Token（非必填）
+	TranslateMode      string    `json:"translate_mode" gorm:"default:none"`    // 翻译模式
+	TranslateEngine    string    `json:"translate_engine" gorm:"default:baidu"` // 翻译引擎
+	EngineConfig       string    `json:"engine_config"`                         // 引擎专属配置（JSON）
+	ScrapeFields       string    `json:"scrape_fields" gorm:"type:text"`        // 刮削字段（JSON 数组）
+	ScrapeIgnoreLocked bool      `json:"scrape_ignore_locked" gorm:"default:false"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 // TableName 指定表名

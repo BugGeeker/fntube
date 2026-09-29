@@ -17,6 +17,11 @@ const routes = [
     component: () => import('@/views/MediaItemsView.vue'),
   },
   {
+    path: '/settings',
+    name: 'Settings',
+    component: () => import('@/views/SettingsView.vue'),
+  },
+  {
     path: '/config',
     name: 'Config',
     component: () => import('@/views/ConfigView.vue'),
