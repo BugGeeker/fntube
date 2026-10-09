@@ -264,12 +264,35 @@ export interface AudioStreamInfo {
   is_fake: boolean
 }
 
+// 字幕流信息
+export interface SubtitleStreamInfo {
+  media_guid: string
+  title: string
+  guid: string
+  codec_name: string
+  codec_type: string
+  language: string
+  forced: number
+  index: number
+  is_default: number
+  is_external: number
+  format: string
+  trim_id: string
+  source_id: string
+  Source: string
+  create_time: number
+  update_time: number
+  extra_file: number
+  is_bitmap: number
+  file_size: number
+}
+
 // 媒体流信息列表
 export interface StreamListResult {
   files: MediaFileInfo[]
   video_streams: VideoStreamInfo[]
   audio_streams: AudioStreamInfo[]
-  subtitle_streams: string[]
+  subtitle_streams: SubtitleStreamInfo[]
 }
 
 // --- 配置 ---

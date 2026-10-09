@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"log"
 	"strconv"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -125,15 +126,12 @@ func (h *ScrapeLogHandler) rescrape(ctx context.Context, c *app.RequestContext) 
 		return
 	}
 
-	// 先删除该 item_guid 的旧日志
-	h.db.Where("item_guid = ?", itemGUID).Delete(&model.ScrapeLog{})
-
-	// 异步执行刮削
-	go func() {
-		if _, err := h.scheduler.ScrapeSingle(itemGUID); err != nil {
-			// 错误日志在 scheduler 内部记录
-		}
-	}()
+	// 先创建刮削记录，再异步执行，确保前置检查失败时也能看到失败原因。
+	if err := h.scheduler.StartScrapeSingle(itemGUID); err != nil {
+		log.Printf("[scrapelog] 启动单条刮削失败 %s: %v", itemGUID, err)
+		c.JSON(500, map[string]string{"error": err.Error()})
+		return
+	}
 
 	c.JSON(200, map[string]string{"status": "ok", "message": "刮削已开始"})
 }

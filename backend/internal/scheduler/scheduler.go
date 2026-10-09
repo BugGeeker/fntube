@@ -142,25 +142,67 @@ func (s *Scheduler) RunTask(taskID uint) error {
 	return s.runTask(taskID)
 }
 
+// StartScrapeSingle 创建手动刮削记录并异步执行。
+func (s *Scheduler) StartScrapeSingle(itemGUID string) error {
+	logEntry, err := s.createScrapeLog(itemGUID, "", model.ScrapeMethodManual, 0)
+	if err != nil {
+		return err
+	}
+	if err := s.db.Where("item_guid = ? AND id <> ?", itemGUID, logEntry.ID).Delete(&model.ScrapeLog{}).Error; err != nil {
+		err = fmt.Errorf("清理旧刮削记录失败: %w", err)
+		s.updateScrapeLogStatus(logEntry, model.ScrapeStatusFailed, err.Error())
+		return err
+	}
+
+	go func() {
+		if _, err := s.scrapeSingle(itemGUID, logEntry); err != nil {
+			log.Printf("[scheduler] 单条刮削失败 %s: %v", itemGUID, err)
+		}
+	}()
+	return nil
+}
+
 // ScrapeSingle 对单个媒体项执行刮削并记录日志（手动触发），返回番号和错误
 func (s *Scheduler) ScrapeSingle(itemGUID string) (string, error) {
+	logEntry, err := s.createScrapeLog(itemGUID, "", model.ScrapeMethodManual, 0)
+	if err != nil {
+		return "", err
+	}
+	return s.scrapeSingle(itemGUID, logEntry)
+}
+
+func (s *Scheduler) scrapeSingle(itemGUID string, logEntry *model.ScrapeLog) (string, error) {
+	log.Printf("[scheduler] 单条刮削任务已启动: %s", itemGUID)
+
+	fail := func(err error) (string, error) {
+		s.updateScrapeLogStatus(logEntry, model.ScrapeStatusFailed, err.Error())
+		return "", err
+	}
+
 	if s.service == nil || !s.service.IsAuthenticated() {
-		return "", fmt.Errorf("飞牛影视未连接")
+		return fail(fmt.Errorf("飞牛影视未连接"))
 	}
 
 	// 获取媒体项信息
 	item, err := s.service.GetItemInfo(itemGUID)
-	if err != nil || item == nil {
-		return "", fmt.Errorf("获取媒体项失败: %w", err)
+	if err != nil {
+		return fail(fmt.Errorf("获取媒体项失败: %w", err))
 	}
+	if item == nil {
+		return fail(fmt.Errorf("获取媒体项失败: 返回数据为空"))
+	}
+	s.db.Model(logEntry).Updates(map[string]interface{}{
+		"title":      item.Title,
+		"updated_at": time.Now(),
+	})
 
 	// 读取 MetaTube 配置
 	var cfg scrapeConfig
 	if err := s.db.Table("meta_tube_configs").Order("id desc").First(&cfg).Error; err != nil {
-		return "", fmt.Errorf("未配置 MetaTube")
+		return fail(fmt.Errorf("未配置 MetaTube"))
 	}
 	if cfg.Host == "" {
-		return "", fmt.Errorf("MetaTube 服务地址为空")
+		return fail(fmt.Errorf("MetaTube 服务地址为空"))
 	}
 
 	mtClient := metatube.NewClient(cfg.Host, cfg.Token)
@@ -174,11 +216,12 @@ func (s *Scheduler) ScrapeSingle(itemGUID string) (string, error) {
 	}
 
 	// 执行刮削
-	number, err := s.scrapeItem(*item, mtClient, cfg, genreMap, model.ScrapeMethodManual, 0)
+	number, err := s.scrapeItem(*item, mtClient, cfg, genreMap, model.ScrapeMethodManual, 0, logEntry)
 	if err != nil {
 		return number, err
 	}
 
+	log.Printf("[scheduler] 单条刮削完成: %s (%s)", itemGUID, number)
 	return number, nil
 }
 
@@ -271,7 +314,7 @@ func (s *Scheduler) runTask(taskID uint) error {
 
 		log.Printf("[scheduler] 刮削: %s (%s)", item.Title, item.Guid)
 
-		_, err := s.scrapeItem(item, mtClient, cfg, genreMap, model.ScrapeMethodAuto, runRecord.ID)
+		_, err := s.scrapeItem(item, mtClient, cfg, genreMap, model.ScrapeMethodAuto, runRecord.ID, nil)
 		if err != nil {
 			log.Printf("[scheduler] 刮削失败 %s: %v", item.Title, err)
 			failedCount++
@@ -312,31 +355,83 @@ func (s *Scheduler) getScrapedItems() (map[string]bool, error) {
 	return result, nil
 }
 
-// scrapeItem 对单个媒体项执行刮削，返回番号
-func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatube.Client, cfg scrapeConfig, genreMap map[string]int, method string, taskRunID uint) (string, error) {
-	streamList, err := s.service.GetStreamList(item.Guid)
-	if err != nil {
-		return "", fmt.Errorf("获取媒体流信息失败: %w", err)
-	}
-	if len(streamList.Files) == 0 || streamList.Files[0].FileName == "" {
-		return "", fmt.Errorf("媒体文件名为空")
-	}
-	keyword := streamList.Files[0].FileName
-	if extIdx := strings.LastIndex(keyword, "."); extIdx > 0 {
-		keyword = keyword[:extIdx]
-	}
-
-	// 创建刮削日志记录（开始时记录）
-	logEntry := model.ScrapeLog{
-		ItemGUID:  item.Guid,
-		Title:     item.Title,
+func (s *Scheduler) createScrapeLog(itemGUID, title, method string, taskRunID uint) (*model.ScrapeLog, error) {
+	logEntry := &model.ScrapeLog{
+		ItemGUID:  itemGUID,
+		Title:     title,
 		Method:    method,
-		Number:    keyword,
 		TaskRunID: taskRunID,
 		Status:    model.ScrapeStatusInProgress,
 		Steps:     "[]",
 	}
-	s.db.Create(&logEntry)
+	if err := s.db.Create(logEntry).Error; err != nil {
+		return nil, fmt.Errorf("创建刮削记录失败: %w", err)
+	}
+	return logEntry, nil
+}
+
+func (s *Scheduler) updateScrapeLogStatus(logEntry *model.ScrapeLog, status, errMsg string) {
+	if logEntry == nil || logEntry.ID == 0 {
+		return
+	}
+	updates := map[string]interface{}{
+		"status":     status,
+		"error":      errMsg,
+		"updated_at": time.Now(),
+	}
+	if err := s.db.Model(logEntry).Updates(updates).Error; err != nil {
+		log.Printf("[scheduler] 更新刮削记录失败 %d: %v", logEntry.ID, err)
+	}
+}
+
+func resolveScrapeKeyword(item trimmedia.MediaServerItem, streamList *trimmedia.StreamListResult) (string, string) {
+	if streamList != nil && len(streamList.Files) > 0 {
+		keyword := strings.TrimSpace(streamList.Files[0].FileName)
+		if keyword != "" {
+			if extIdx := strings.LastIndex(keyword, "."); extIdx > 0 {
+				keyword = keyword[:extIdx]
+			}
+			return keyword, "file_name"
+		}
+	}
+	if keyword := strings.TrimSpace(item.Title); keyword != "" {
+		return keyword, "title"
+	}
+	if keyword := strings.TrimSpace(item.OriginalTitle); keyword != "" {
+		return keyword, "original_title"
+	}
+	return "", ""
+}
+
+// scrapeItem 对单个媒体项执行刮削，返回番号
+func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatube.Client, cfg scrapeConfig, genreMap map[string]int, method string, taskRunID uint, logEntry *model.ScrapeLog) (string, error) {
+	if logEntry == nil {
+		var err error
+		logEntry, err = s.createScrapeLog(item.Guid, item.Title, method, taskRunID)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	streamList, streamErr := s.service.GetStreamList(item.Guid)
+	if streamErr != nil {
+		log.Printf("[scheduler] 获取媒体流信息失败 %s，将使用影片标题继续刮削: %v", item.Guid, streamErr)
+		streamList = nil
+	}
+	keyword, keywordSource := resolveScrapeKeyword(item, streamList)
+	if keyword == "" {
+		err := fmt.Errorf("媒体文件名和影片标题均为空，无法确定刮削关键词")
+		s.updateScrapeLogStatus(logEntry, model.ScrapeStatusFailed, err.Error())
+		return "", err
+	}
+	if keywordSource != "file_name" && streamErr == nil {
+		log.Printf("[scheduler] 媒体文件名为空 %s，将使用影片标题继续刮削", item.Guid)
+	}
+	s.db.Model(logEntry).Updates(map[string]interface{}{
+		"title":      item.Title,
+		"number":     keyword,
+		"updated_at": time.Now(),
+	})
 
 	// 辅助：记录步骤（同步骤名只保留一条，后调用覆盖前调用的状态）
 	stepRecords := []map[string]string{}
@@ -363,7 +458,7 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 			stepRecords = append(stepRecords, entry)
 		}
 		stepsJSON, _ := json.Marshal(stepRecords)
-		s.db.Model(&logEntry).Updates(map[string]interface{}{
+		s.db.Model(logEntry).Updates(map[string]interface{}{
 			"steps":      string(stepsJSON),
 			"updated_at": time.Now(),
 		})
@@ -377,7 +472,7 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 		if errMsg != "" {
 			updates["error"] = errMsg
 		}
-		s.db.Model(&logEntry).Updates(updates)
+		s.db.Model(logEntry).Updates(updates)
 	}
 
 	// 1. 搜索 MetaTube
@@ -399,21 +494,31 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 	// 2. 获取影片详情
 	addStep(model.StepGetDetail, "running", "")
 	info, err := mtClient.GetMovieInfo(first.Provider, first.ID)
-	if err != nil || info == nil {
-		errMsg := "获取详情失败"
-		if err != nil {
-			errMsg += ": " + err.Error()
-		}
+	if err != nil {
+		errMsg := "获取详情失败: " + err.Error()
 		addStep(model.StepGetDetail, "failed", errMsg)
 		updateStatus(model.ScrapeStatusFailed, errMsg)
 		return "", fmt.Errorf("获取详情失败: %w", err)
+	}
+	if info == nil {
+		errMsg := "获取详情失败: 返回数据为空"
+		addStep(model.StepGetDetail, "failed", errMsg)
+		updateStatus(model.ScrapeStatusFailed, errMsg)
+		return "", fmt.Errorf("获取详情失败: 返回数据为空")
 	}
 	addStep(model.StepGetDetail, "success", "")
 
 	// 3. 获取编辑信息
 	detail, err := s.service.GetEditDetail(item.Guid)
-	if err != nil || detail == nil {
-		return info.Number, fmt.Errorf("获取编辑信息失败: %w", err)
+	if err != nil {
+		err = fmt.Errorf("获取编辑信息失败: %w", err)
+		updateStatus(model.ScrapeStatusFailed, err.Error())
+		return info.Number, err
+	}
+	if detail == nil {
+		err = fmt.Errorf("获取编辑信息失败: 返回数据为空")
+		updateStatus(model.ScrapeStatusFailed, err.Error())
+		return info.Number, err
 	}
 
 	// 4. 填入编辑信息
@@ -472,7 +577,7 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 	}
 
 	// 更新日志中的标题
-	s.db.Model(&logEntry).Updates(map[string]interface{}{
+	s.db.Model(logEntry).Updates(map[string]interface{}{
 		"title":      detail.Title,
 		"updated_at": time.Now(),
 	})

@@ -206,8 +206,8 @@
         <div v-if="streamInfo && streamInfo.subtitle_streams.length > 0" style="margin-top: 16px">
           <h4>字幕</h4>
           <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-            <a-tag v-for="(subtitle, index) in streamInfo.subtitle_streams" :key="index" color="cyan">
-              {{ subtitle }}
+            <a-tag v-for="(subtitle, index) in streamInfo.subtitle_streams" :key="subtitle.guid || index" color="cyan">
+              {{ formatSubtitle(subtitle, index) }}
             </a-tag>
           </div>
         </div>
@@ -242,7 +242,7 @@
 
 <script setup lang="ts">
 import { proxyImage } from '@/utils/image'
-import { getEpisodes, getItem, getPersons, getSeasons, getStreamList, type MediaItem, type Person, type Season, type StreamListResult } from '@/api/trimmedia'
+import { getEpisodes, getItem, getPersons, getSeasons, getStreamList, type MediaItem, type Person, type Season, type StreamListResult, type SubtitleStreamInfo } from '@/api/trimmedia'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { rescrapeItem } from '@/api/scrapelog'
@@ -264,6 +264,11 @@ const persons = ref<Person[]>([])
 const seasons = ref<Season[]>([])
 const episodes = ref<Season[]>([])
 const streamInfo = ref<StreamListResult | null>(null)
+
+const formatSubtitle = (subtitle: SubtitleStreamInfo, index: number) => {
+  const details = [subtitle.title, subtitle.language, subtitle.format || subtitle.codec_name].filter(Boolean)
+  return details.length > 0 ? details.join(' / ') : `字幕 ${index + 1}`
+}
 
 const guid = ref('')
 const item = ref<MediaItem | null>(null)

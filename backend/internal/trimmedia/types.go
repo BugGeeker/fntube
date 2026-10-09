@@ -256,12 +256,35 @@ type AudioStreamInfo struct {
 	IsFake           bool   `json:"is_fake"`
 }
 
+// SubtitleStreamInfo 字幕流信息
+type SubtitleStreamInfo struct {
+	MediaGUID  string `json:"media_guid"`
+	Title      string `json:"title"`
+	GUID       string `json:"guid"`
+	CodecName  string `json:"codec_name"`
+	CodecType  string `json:"codec_type"`
+	Language   string `json:"language"`
+	Forced     int    `json:"forced"`
+	Index      int    `json:"index"`
+	IsDefault  int    `json:"is_default"`
+	IsExternal int    `json:"is_external"`
+	Format     string `json:"format"`
+	TrimID     string `json:"trim_id"`
+	SourceID   string `json:"source_id"`
+	Source     string `json:"Source"`
+	CreateTime int64  `json:"create_time"`
+	UpdateTime int64  `json:"update_time"`
+	ExtraFile  int    `json:"extra_file"`
+	IsBitmap   int    `json:"is_bitmap"`
+	FileSize   int64  `json:"file_size"`
+}
+
 // StreamListResult 媒体流信息列表
 type StreamListResult struct {
-	Files           []MediaFileInfo    `json:"files"`
-	VideoStreams    []VideoStreamInfo  `json:"video_streams"`
-	AudioStreams    []AudioStreamInfo  `json:"audio_streams"`
-	SubtitleStreams []string           `json:"subtitle_streams"`
+	Files           []MediaFileInfo      `json:"files"`
+	VideoStreams    []VideoStreamInfo    `json:"video_streams"`
+	AudioStreams    []AudioStreamInfo    `json:"audio_streams"`
+	SubtitleStreams []SubtitleStreamInfo `json:"subtitle_streams"`
 }
 
 // TmdbID 从 trim_id 提取 tmdb id
