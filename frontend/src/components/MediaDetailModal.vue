@@ -1,7 +1,6 @@
 <template>
-  <a-modal v-model:open="visible" width="1000px" :title="item?.title || '详情'"
-    :body-style="{ maxHeight: '80vh', minHeight: '600px', overflow: 'auto' }">
-    <a-spin :spinning="loading" style="min-height: '600px'; width: 100%;">
+  <a-modal v-model:open="visible" width="1000px" :title="item?.title || '详情'">
+    <a-spin :spinning="loading" style="width: 100%;">
       <template v-if="item">
         <!-- 顶部图片横向布局 -->
         <div style="display: flex; gap: 12px; margin-bottom: 16px;">

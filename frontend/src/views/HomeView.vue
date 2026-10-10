@@ -90,6 +90,8 @@
         <a-empty v-if="!latestLoading && latestItems.length === 0" description="暂无入库媒体" />
       </a-spin>
     </a-card>
+
+    <MediaDetailModal ref="mediaDetailModalRef" />
   </div>
 </template>
 
@@ -110,6 +112,7 @@ import { getDashboardSummary, type DashboardSummary } from '@/api/dashboard'
 import { getLatest, type PlayItem } from '@/api/trimmedia'
 import { formatDateTime } from '@/utils/format'
 import MediaImage from '@/components/MediaImage.vue'
+import MediaDetailModal from '@/components/MediaDetailModal.vue'
 
 use([CanvasRenderer, LineChart, GridComponent, TooltipComponent])
 
@@ -117,6 +120,7 @@ const loading = ref(false)
 const latestLoading = ref(false)
 const summary = ref<DashboardSummary | null>(null)
 const latestItems = ref<PlayItem[]>([])
+const mediaDetailModalRef = ref<typeof MediaDetailModal>()
 
 const chartOption = computed(() => ({
   tooltip: { trigger: 'axis' },
@@ -141,7 +145,7 @@ const chartOption = computed(() => ({
 
 function openItem(item: PlayItem) {
   if (item.id) {
-    window.open(`#/media/${item.id}`, '_self')
+    mediaDetailModalRef.value?.open(item.id)
   }
 }
 
@@ -165,10 +169,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.dashboard {
-  max-width: 1400px;
-}
-
 .chart {
   height: 280px;
 }

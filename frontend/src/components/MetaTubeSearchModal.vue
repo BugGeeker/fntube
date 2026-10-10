@@ -1,12 +1,11 @@
 <template>
   <!-- MetaTube 搜索结果弹窗 -->
-  <a-modal v-model:open="visible" width="800px" title="MetaTube 搜索结果" :footer="null"
-    :body-style="{ maxHeight: '70vh', minHeight: '400px', overflow: 'auto' }">
+  <a-modal v-model:open="visible" width="800px" title="MetaTube 搜索结果" :footer="null">
     <a-space-compact style="width: 100%; margin-bottom: 16px">
       <a-input v-model:value="keyword" placeholder="输入搜索关键词" @press-enter="doSearch" />
       <a-button type="primary" :loading="searching" @click="doSearch">搜索</a-button>
     </a-space-compact>
-    <a-spin :spinning="searching" style="min-height: 400px">
+    <a-spin :spinning="searching">
       <a-empty v-if="!searching && metaTubeStore.searchResults.length === 0" description="无搜索结果" />
       <div class="metatube-result-grid">
         <div v-for="result in metaTubeStore.searchResults" :key="result.id + result.provider" class="metatube-result-cell">

@@ -1,8 +1,7 @@
 <template>
   <!-- 编辑弹窗 -->
-  <a-modal v-model:open="editVisible" width="900px" title="编辑媒体信息"
-    :body-style="{ maxHeight: '80vh', minHeight: '600px', overflow: 'auto' }">
-    <a-spin :spinning="editLoading" style="min-height: 600px; width: 100%">
+  <a-modal v-model:open="editVisible" width="900px" title="编辑媒体信息">
+    <a-spin :spinning="editLoading" style="width: 100%">
       <a-form v-if="editForm" layout="vertical">
         <a-form-item label="海报">
           <a-flex gap="middle" align="center">
