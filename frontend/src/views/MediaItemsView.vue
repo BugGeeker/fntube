@@ -1,10 +1,22 @@
 <template>
   <div>
     <!-- 媒体条目列表 -->
-    <a-card :title="libraryName || '加载中...'">
+    <a-card>
+      <template #title>
+        <div class="library-title">
+          <a-button type="text" shape="circle" title="返回媒体库" aria-label="返回媒体库"
+            @click="backToLibraries">
+            <template #icon>
+              <ArrowLeftOutlined />
+            </template>
+          </a-button>
+          <span class="library-title-text">{{ libraryName || '加载中...' }}</span>
+        </div>
+      </template>
       <template #extra>
         <a-space>
-          <a-button @click="backToLibraries">返回媒体库</a-button>
+          <a-input-search v-model:value="searchKeyword" placeholder="搜索媒体" :enter-button="true"
+            class="header-search" @search="handleSearch" />
           <a-button @click="handleRefresh">
             <template #icon>
               <ReloadOutlined />
@@ -19,19 +31,13 @@
               <template #cover>
                 <div style="position: relative;">
                   <MediaImage :src="item.poster" :alt="item.title" :ratio="posterRatio" />
-
                   <div class="card-actions" @click.stop>
-                    <a-button size="medium" shape="circle" @click.stop="handleCardEdit(item)" title="播放">
-                      <template #icon>
-                        <CaretRightOutlined />
-                      </template>
-                    </a-button>
-                    <a-button size="medium" shape="circle" @click.stop="handleCardEdit(item)" title="编辑">
+                    <a-button size="middle" shape="circle" @click.stop="handleCardEdit(item)" title="编辑">
                       <template #icon>
                         <EditOutlined />
                       </template>
                     </a-button>
-                    <a-button size="medium" shape="circle" :loading="scrapingItem === item.guid"
+                    <a-button size="middle" shape="circle" :loading="scrapingItem === item.guid"
                       @click.stop="handleScrape(item)" title="刮削">
                       <template #icon>
                         <ThunderboltOutlined />
@@ -63,6 +69,25 @@
       </div>
     </a-card>
 
+    <!-- 搜索结果 -->
+    <a-modal v-model:open="searchVisible" title="搜索结果" width="800" :footer="null">
+      <a-spin :spinning="store.loading">
+        <a-list :data-source="store.searchResults" bordered>
+          <template #renderItem="{ item }">
+            <a-list-item style="cursor: pointer" @click="showSearchResultDetail(item)">
+              <template #extra>
+                <MediaImage :src="item.poster" :alt="item.title" ratio="2 / 3" class="search-result-poster" />
+              </template>
+              <a-list-item-meta :title="item.title" :description="`${itemYear(item)} - ${item.type}`" />
+            </a-list-item>
+          </template>
+          <template #footer>
+            <span v-if="store.searchResults.length === 0">无搜索结果</span>
+          </template>
+        </a-list>
+      </a-spin>
+    </a-modal>
+
     <!-- 媒体详情弹窗 -->
     <MediaDetailModal ref="mediaDetailModelRef" :item="store.currentItem" @edit="handleEdit" />
 
@@ -76,7 +101,12 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { EditOutlined, ThunderboltOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
+import {
+  ArrowLeftOutlined,
+  EditOutlined,
+  ReloadOutlined,
+  ThunderboltOutlined,
+} from '@ant-design/icons-vue'
 import { useTrimMediaStore } from '@/stores/trimmedia'
 import { useMetaTubeStore } from '@/stores/metatube'
 import MediaDetailModal from '@/components/MediaDetailModal.vue'
@@ -84,7 +114,6 @@ import MediaEditModal from '@/components/MediaEditModal.vue'
 import { rescrapeItem } from '@/api/scrapelog'
 import MediaImage from '@/components/MediaImage.vue'
 import { getLibraryViewType, type MediaItem } from '@/api/trimmedia'
-import { ReloadOutlined } from '@ant-design/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -93,6 +122,8 @@ const metaTubeStore = useMetaTubeStore()
 
 const mediaDetailModelRef = ref<typeof MediaDetailModal>()
 const editModalRef = ref<typeof MediaEditModal>()
+const searchVisible = ref(false)
+const searchKeyword = ref('')
 
 // 刮削状态
 const scrapingItem = ref<string | null>(null)
@@ -148,6 +179,14 @@ function backToLibraries() {
   router.push('/media')
 }
 
+async function handleSearch() {
+  if (!searchKeyword.value.trim()) return
+  searchVisible.value = true
+  await store.search(searchKeyword.value).catch(() => {
+    message.error('搜索失败')
+  })
+}
+
 function itemYear(item: MediaItem): string {
   const date = item.release_date || item.air_date || ''
   return date.slice(0, 4)
@@ -155,6 +194,11 @@ function itemYear(item: MediaItem): string {
 
 async function showDetail(item: MediaItem) {
   mediaDetailModelRef.value?.open(item.guid)
+}
+
+function showSearchResultDetail(item: MediaItem) {
+  searchVisible.value = false
+  showDetail(item)
 }
 
 async function handleEdit(item?: MediaItem) {
@@ -182,6 +226,29 @@ async function handleScrape(item: MediaItem) {
 </script>
 
 <style scoped>
+.library-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.library-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-search {
+  width: 240px;
+}
+
+.search-result-poster {
+  width: 48px;
+  height: 72px;
+  overflow: hidden;
+}
+
 :deep(.ant-col) {
   min-width: 0;
 }
@@ -234,5 +301,15 @@ async function handleScrape(item: MediaItem) {
   gap: 4px;
   opacity: 0;
   transition: opacity 0.2s ease;
+}
+
+@media (max-width: 639px) {
+  .header-search {
+    width: 160px;
+  }
+
+  .card-actions {
+    opacity: 1;
+  }
 }
 </style>

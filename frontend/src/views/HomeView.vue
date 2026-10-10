@@ -218,4 +218,10 @@ onMounted(async () => {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+@media (max-width: 639px) {
+  .media-overlay {
+    opacity: 1;
+  }
+}
 </style>

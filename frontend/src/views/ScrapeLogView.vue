@@ -3,9 +3,9 @@
     <a-card title="刮削记录">
       <template #extra>
         <a-space>
-          <a-input-search v-model:value="numberQuery" placeholder="按番号查询" allow-clear enter-button="查询"
-            style="width: 240px" @search="handleSearch" />
-          <a-button :loading="loading" @click="loadLogs">
+          <a-input-search v-model:value="numberQuery" placeholder="按番号查询" allow-clear :enter-button="true"
+            class="header-search" @search="handleSearch" />
+          <a-button :loading="loading" @click="loadLogs()">
             <template #icon>
               <ReloadOutlined />
             </template>
@@ -94,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { getScrapeLogs, deleteScrapeLog, rescrapeItem, type ScrapeLog, type ScrapeStep } from '@/api/scrapelog'
 import { formatDate } from '@/utils/format'
@@ -109,6 +109,8 @@ const pageSize = ref(20)
 const total = ref(0)
 const rescrapingGuid = ref<string | null>(null)
 const mediaDetailModelRef = ref<typeof MediaDetailModal>()
+let logsRequestPending = false
+let autoRefreshTimer: ReturnType<typeof setInterval> | undefined
 
 const pagination = ref({
   current: 1,
@@ -170,8 +172,10 @@ function stepsBadgeStatus(stepsStr: string): string {
   return 'success'
 }
 
-async function loadLogs() {
-  loading.value = true
+async function loadLogs({ silent = false }: { silent?: boolean } = {}) {
+  if (logsRequestPending) return
+  logsRequestPending = true
+  if (!silent) loading.value = true
   try {
     const { data } = await getScrapeLogs(currentPage.value, pageSize.value, numberQuery.value.trim())
     logs.value = data.items || []
@@ -180,9 +184,10 @@ async function loadLogs() {
     pagination.value.pageSize = pageSize.value
     pagination.value.total = data.total
   } catch {
-    message.error('获取刮削记录失败')
+    if (!silent) message.error('获取刮削记录失败')
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
+    logsRequestPending = false
   }
 }
 
@@ -229,10 +234,18 @@ async function handleRescrape(record: { item_guid: string; title?: string }) {
 
 onMounted(() => {
   loadLogs()
+  autoRefreshTimer = setInterval(() => {
+    loadLogs({ silent: true })
+  }, 5000)
+})
+
+onUnmounted(() => {
+  if (autoRefreshTimer !== undefined) clearInterval(autoRefreshTimer)
 })
 </script>
 
 <style scoped>
+.header-search { width: 240px; }
 .mobile-cards { display: none; }
 .card-title { font-weight: 600; color: #1677ff; cursor: pointer; }
 .card-meta { margin: 4px 0 8px; color: #999; font-size: 12px; }
@@ -240,6 +253,7 @@ onMounted(() => {
 .steps-list { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; color: #666; font-size: 12px; }
 .card-actions { margin-top: 8px; }
 @media (max-width: 639px) {
+  .header-search { width: 160px; }
   .desktop-table { display: none; }
   .mobile-cards { display: block; }
   .log-card { margin-bottom: 8px; }

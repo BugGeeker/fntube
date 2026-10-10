@@ -24,6 +24,9 @@ body {
 }
 
 @media (max-width: 639px) {
+  .ant-card-head {
+    padding: 0 12px!important;
+  }
   .ant-modal-content {
     padding: 10px 12px!important;
   }

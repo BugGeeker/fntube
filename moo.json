@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": "moo",
   "apps": {
     "FnTube": {
       "appname": "FnTube",
@@ -14,13 +14,13 @@
           "repository": "https://github.com/BugGeeker/fntube",
           "releases": [
             {
-              "version": "1.0.11",
-              "release_notes": "https://github.com/BugGeeker/fntube/releases/tag/v1.0.11",
+              "version": "1.0.12",
+              "release_notes": "https://github.com/BugGeeker/fntube/releases/tag/v1.0.12",
               "files": [
                 {
-                  "url": "https://github.com/BugGeeker/fntube/releases/download/v1.0.11/FnTube.fpk",
-                  "sha256": "b0995f8b303fe2072485b491766708973238654f35bfa70458412672d9b328cf",
-                  "size": 14.38,
+                  "url": "https://github.com/BugGeeker/fntube/releases/download/v1.0.12/FnTube.fpk",
+                  "sha256": "ca29aa2c6659d1f9e0d3200eeedd375037dc6ceccdc836a1505e5109bfc45cfd",
+                  "size": 14.73,
                   "arch": "x86"
                 }
               ]

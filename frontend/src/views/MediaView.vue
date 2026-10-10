@@ -4,8 +4,8 @@
     <a-card title="媒体库">
       <template #extra>
         <a-space>
-          <a-input-search v-model:value="searchKeyword" placeholder="搜索媒体" enter-button="搜索" style="width: 240px;"
-            @search="handleSearch" />
+          <a-input-search v-model:value="searchKeyword" placeholder="搜索媒体" :enter-button="true"
+            class="header-search" @search="handleSearch" />
           <a-button @click="handleRefresh">
             <template #icon>
               <ReloadOutlined />
@@ -141,6 +141,10 @@ async function handleRefresh() {
   overflow: hidden;
 }
 
+.header-search {
+  width: 240px;
+}
+
 :deep(.ant-col) {
   min-width: 0;
 }
@@ -165,5 +169,11 @@ async function handleRefresh() {
 :deep(.ant-card-meta-title) {
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+@media (max-width: 639px) {
+  .header-search {
+    width: 160px;
+  }
 }
 </style>
