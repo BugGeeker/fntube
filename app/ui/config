@@ -4,7 +4,10 @@
             "title": "FnTube",
             "icon": "images/icon.png",
             "type": "iframe",
-            "url": "/cgi/ThirdParty/FnTube/index.cgi/",
+            "protocol": "",
+            "gatewayPrefix": "/app/FnTube",
+            "gatewaySocket": "app.sock",
+            "url": "/app/FnTube/index.html",
             "allUsers": false
         }
     }

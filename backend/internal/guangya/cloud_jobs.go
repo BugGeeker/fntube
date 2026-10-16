@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -32,14 +35,17 @@ func (s *Service) saveCloudAddJob(taskID string, input CreateCloudTaskInput, req
 		return err
 	}
 	job := model.GuangyaCloudAddJob{
-		TaskID:              taskID,
-		ParentID:            strings.TrimSpace(input.ParentID),
-		RequestedName:       requestedName,
-		ResolvedIsDirectory: input.ResolvedIsDirectory,
-		SelectedFiles:       string(selected),
-		Status:              cloudJobPending,
-		CurrentStep:         "任务已创建",
-		Progress:            5,
+		TaskID:               taskID,
+		ParentID:             strings.TrimSpace(input.ParentID),
+		RequestedName:        requestedName,
+		ResolvedIsDirectory:  input.ResolvedIsDirectory,
+		SelectedFiles:        string(selected),
+		SmartStrmTaskName:    input.SmartStrmTaskName,
+		SmartStrmStorageRoot: input.SmartStrmStorageRoot,
+		StrmSavePath:         input.StrmSavePath,
+		Status:               cloudJobPending,
+		CurrentStep:          "任务已创建",
+		Progress:             5,
 	}
 	if err := s.db.Create(&job).Error; err != nil {
 		return err
@@ -100,6 +106,17 @@ func (s *Service) processPendingCloudJobs() {
 }
 
 func (s *Service) processCloudAddJob(job *model.GuangyaCloudAddJob) (string, error) {
+	if job.SmartStrmNotified {
+		generated, err := s.copyGeneratedStrm(job)
+		if err != nil {
+			return cloudJobFailed, err
+		}
+		if !generated {
+			return "", nil
+		}
+		return cloudJobCompleted, nil
+	}
+
 	task, found, err := s.cloudTask(job.TaskID)
 	if err != nil {
 		return "", err
@@ -120,13 +137,20 @@ func (s *Service) processCloudAddJob(job *model.GuangyaCloudAddJob) (string, err
 		if err := json.Unmarshal([]byte(job.SelectedFiles), &selected); err != nil {
 			return cloudJobFailed, fmt.Errorf("读取所选文件信息失败: %w", err)
 		}
+		var organizedFolder string
 		if job.ResolvedIsDirectory {
-			err = s.organizeDirectoryTask(*job, task, selected)
+			organizedFolder, err = s.organizeDirectoryTask(*job, task, selected)
 		} else {
-			err = s.organizeSingleFileTask(*job, task)
+			organizedFolder, err = s.organizeSingleFileTask(*job, task)
 		}
 		if err != nil {
 			return "", err
+		}
+		if err := s.notifySmartStrm(job, organizedFolder); err != nil {
+			return cloudJobFailed, err
+		}
+		if job.SmartStrmNotified {
+			return "", nil
 		}
 		return cloudJobCompleted, nil
 	case 3, 4:
@@ -168,99 +192,111 @@ func (s *Service) cloudTask(taskID string) (guangyaclient.CloudTask, bool, error
 	return guangyaclient.CloudTask{}, false, nil
 }
 
-func (s *Service) organizeSingleFileTask(job model.GuangyaCloudAddJob, task guangyaclient.CloudTask) error {
+func (s *Service) organizeSingleFileTask(
+	job model.GuangyaCloudAddJob,
+	task guangyaclient.CloudTask,
+) (string, error) {
 	baseName := strings.TrimSuffix(job.RequestedName, path.Ext(job.RequestedName))
 	if strings.TrimSpace(baseName) == "" {
-		return errors.New("无法根据名称创建目标文件夹")
+		return "", errors.New("无法根据名称创建目标文件夹")
 	}
 	if err := s.updateCloudJob(&job, map[string]any{
 		"current_step": "创建目标文件夹",
 		"progress":     80,
 	}); err != nil {
-		return err
+		return "", err
 	}
 	folder, err := s.ensureFolder(baseName, job.ParentID)
 	if err != nil {
-		return fmt.Errorf("创建目标文件夹失败: %w", err)
+		return "", fmt.Errorf("创建目标文件夹失败: %w", err)
 	}
 
 	if err := s.updateCloudJob(&job, map[string]any{
 		"current_step": "查找已添加文件",
 		"progress":     86,
 	}); err != nil {
-		return err
+		return "", err
 	}
 	fileNames := uniqueNonEmpty(job.RequestedName, task.FileName)
 	if existing, ok, err := s.findDirectFile(folder.FileID, fileNames, false); err != nil {
-		return err
+		return "", err
 	} else if ok {
 		if existing.FileName != job.RequestedName {
 			if err := s.updateCloudJob(&job, map[string]any{
 				"current_step": "重命名文件",
 				"progress":     95,
 			}); err != nil {
-				return err
+				return "", err
 			}
-			return s.renameFile(existing.FileID, job.RequestedName)
+			if err := s.renameFile(existing.FileID, job.RequestedName); err != nil {
+				return "", err
+			}
 		}
-		return nil
+		return folder.FileName, nil
 	}
 
 	file, ok, err := s.findDirectFile(job.ParentID, fileNames, false)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if !ok {
-		return fmt.Errorf("未在保存目录找到已完成的文件 %q", job.RequestedName)
+		return "", fmt.Errorf("未在保存目录找到已完成的文件 %q", job.RequestedName)
 	}
 	if file.FileName != job.RequestedName {
 		if err := s.updateCloudJob(&job, map[string]any{
 			"current_step": "重命名文件",
 			"progress":     92,
 		}); err != nil {
-			return err
+			return "", err
 		}
 		if err := s.renameFile(file.FileID, job.RequestedName); err != nil {
-			return err
+			return "", err
 		}
 	}
 	if err := s.updateCloudJob(&job, map[string]any{
 		"current_step": "移动文件到目标文件夹",
 		"progress":     96,
 	}); err != nil {
-		return err
+		return "", err
 	}
-	return s.moveFiles([]any{file.FileID}, folder.FileID)
+	if err := s.moveFiles([]any{file.FileID}, folder.FileID); err != nil {
+		return "", err
+	}
+	return folder.FileName, nil
 }
 
-func (s *Service) organizeDirectoryTask(job model.GuangyaCloudAddJob, task guangyaclient.CloudTask, selected []SelectedCloudFile) error {
+func (s *Service) organizeDirectoryTask(
+	job model.GuangyaCloudAddJob,
+	task guangyaclient.CloudTask,
+	selected []SelectedCloudFile,
+) (string, error) {
 	if len(selected) == 0 {
-		return errors.New("没有可后处理的已选文件")
+		return "", errors.New("没有可后处理的已选文件")
 	}
 	if err := s.updateCloudJob(&job, map[string]any{
 		"current_step": "查找云添加目录",
 		"progress":     80,
 	}); err != nil {
-		return err
+		return "", err
 	}
 	rootNames := uniqueNonEmpty(task.FileName, job.RequestedName)
 	root, ok, err := s.findDirectFile(job.ParentID, rootNames, true)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if !ok {
-		return fmt.Errorf("未在保存目录找到云添加目录 %q", job.RequestedName)
+		return "", fmt.Errorf("未在保存目录找到云添加目录 %q", job.RequestedName)
 	}
 
 	if err := s.updateCloudJob(&job, map[string]any{
 		"current_step": "扫描文件目录",
 		"progress":     84,
 	}); err != nil {
-		return err
+		return "", err
 	}
 	allFiles, err := s.walkFiles(root.FileID, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 	used := make(map[string]bool)
 	for index, wanted := range selected {
@@ -269,7 +305,7 @@ func (s *Service) organizeDirectoryTask(job model.GuangyaCloudAddJob, task guang
 			"current_step": fmt.Sprintf("整理文件 %d/%d", index+1, len(selected)),
 			"progress":     fileProgress,
 		}); err != nil {
-			return err
+			return "", err
 		}
 		desiredName := desiredCloudFileName(job.RequestedName, index, len(selected), wanted.FileName)
 		if existing := findFileByName(allFiles, desiredName, root.FileID, used); existing != nil {
@@ -278,19 +314,174 @@ func (s *Service) organizeDirectoryTask(job model.GuangyaCloudAddJob, task guang
 		}
 		match := matchSelectedFile(allFiles, wanted, used)
 		if match == nil {
-			return fmt.Errorf("未找到已选文件 %q", strings.Join(wanted.Path, "/"))
+			return "", fmt.Errorf("未找到已选文件 %q", strings.Join(wanted.Path, "/"))
 		}
 		used[match.item.FileID] = true
 		if match.item.ParentID != root.FileID {
 			if err := s.moveFiles([]any{match.item.FileID}, root.FileID); err != nil {
-				return fmt.Errorf("移动文件 %q 失败: %w", match.item.FileName, err)
+				return "", fmt.Errorf("移动文件 %q 失败: %w", match.item.FileName, err)
 			}
 		}
 		if match.item.FileName != desiredName {
 			if err := s.renameFile(match.item.FileID, desiredName); err != nil {
-				return fmt.Errorf("重命名文件 %q 失败: %w", match.item.FileName, err)
+				return "", fmt.Errorf("重命名文件 %q 失败: %w", match.item.FileName, err)
 			}
 		}
+	}
+	return root.FileName, nil
+}
+
+func (s *Service) notifySmartStrm(job *model.GuangyaCloudAddJob, folderName string) error {
+	if job.SmartStrmNotified || strings.TrimSpace(job.SmartStrmTaskName) == "" {
+		return nil
+	}
+	var config model.SmartStrmConfig
+	if err := s.db.Order("id desc").First(&config).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("请先保存 SmartStrm 配置")
+		}
+		return fmt.Errorf("读取 SmartStrm 配置失败: %w", err)
+	}
+	storagePath := path.Join("/", job.SmartStrmStorageRoot, folderName)
+	now := s.now()
+	if err := s.updateCloudJob(job, map[string]any{
+		"smart_strm_notified":     true,
+		"smart_strm_notified_at":  &now,
+		"smart_strm_storage_path": storagePath,
+		"current_step":            "通知 SmartStrm 生成 STRM",
+		"progress":                98,
+		"error":                   "",
+	}); err != nil {
+		return err
+	}
+	if err := s.runSmartStrm(config, job.SmartStrmTaskName, storagePath); err != nil {
+		return fmt.Errorf("通知 SmartStrm 失败: %w", err)
+	}
+	return s.updateCloudJob(job, map[string]any{
+		"current_step": "等待 SmartStrm 生成 STRM",
+		"progress":     99,
+	})
+}
+
+func (s *Service) copyGeneratedStrm(job *model.GuangyaCloudAddJob) (bool, error) {
+	var config model.SmartStrmConfig
+	if err := s.db.Order("id desc").First(&config).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, errors.New("请先保存 SmartStrm 配置")
+		}
+		return false, fmt.Errorf("读取 SmartStrm 配置失败: %w", err)
+	}
+	if strings.TrimSpace(config.StrmRootPath) == "" {
+		return false, errors.New("SmartStrm 设置未配置 STRM 根目录")
+	}
+
+	storagePath := cleanCloudPath(job.SmartStrmStoragePath)
+	relativePath, err := relativeCloudPath(job.SmartStrmStorageRoot, storagePath)
+	if err != nil {
+		return false, err
+	}
+	folderName := path.Base(storagePath)
+	if folderName == "." || folderName == "/" || strings.TrimSpace(folderName) == "" {
+		return false, errors.New("无法确定 STRM 文件名")
+	}
+	sourcePath := filepath.Join(
+		strings.TrimSpace(config.StrmRootPath),
+		filepath.FromSlash(strings.TrimPrefix(storagePath, "/")),
+		folderName+".strm",
+	)
+	if _, err := os.Stat(sourcePath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			if updateErr := s.updateCloudJob(job, map[string]any{
+				"current_step": "等待 SmartStrm 生成 STRM",
+				"progress":     99,
+				"error":        "",
+			}); updateErr != nil {
+				return false, updateErr
+			}
+			return false, nil
+		}
+		return false, fmt.Errorf("检查 SmartStrm 文件失败: %w", err)
+	}
+	if !isFnOSEnvironment() {
+		return false, errors.New("当前不是飞牛环境，无法复制 STRM 文件")
+	}
+	if strings.TrimSpace(job.StrmSavePath) == "" {
+		return false, errors.New("存储配置未设置 STRM 保存目录")
+	}
+
+	targetPath := filepath.Join(
+		strings.TrimSpace(job.StrmSavePath),
+		filepath.FromSlash(relativePath),
+		folderName+".strm",
+	)
+	if err := s.updateCloudJob(job, map[string]any{
+		"current_step": "复制 STRM 文件",
+		"progress":     99,
+		"error":        "",
+	}); err != nil {
+		return false, err
+	}
+	if err := copyFileAtomically(sourcePath, targetPath); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func cleanCloudPath(value string) string {
+	return path.Clean("/" + strings.TrimPrefix(strings.TrimSpace(value), "/"))
+}
+
+func relativeCloudPath(root, target string) (string, error) {
+	cleanRoot := cleanCloudPath(root)
+	cleanTarget := cleanCloudPath(target)
+	if cleanRoot == "/" {
+		return strings.TrimPrefix(cleanTarget, "/"), nil
+	}
+	if cleanTarget == cleanRoot {
+		return "", nil
+	}
+	prefix := cleanRoot + "/"
+	if !strings.HasPrefix(cleanTarget, prefix) {
+		return "", fmt.Errorf("SmartStrm 存储路径 %q 不在存储映射目录 %q 下", cleanTarget, cleanRoot)
+	}
+	return strings.TrimPrefix(cleanTarget, prefix), nil
+}
+
+func isFnOSEnvironment() bool {
+	return strings.TrimSpace(os.Getenv("TRIM_PKGVAR")) != ""
+}
+
+func copyFileAtomically(sourcePath, targetPath string) error {
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return fmt.Errorf("STRM 源文件不可读: %w", err)
+	}
+	defer source.Close()
+
+	targetDir := filepath.Dir(targetPath)
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return fmt.Errorf("创建 STRM 保存目录失败: %w", err)
+	}
+	temp, err := os.CreateTemp(targetDir, ".fntube-strm-*")
+	if err != nil {
+		return fmt.Errorf("STRM 保存目录不可写: %w", err)
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+
+	if _, err := io.Copy(temp, source); err != nil {
+		temp.Close()
+		return fmt.Errorf("复制 STRM 文件失败: %w", err)
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return fmt.Errorf("写入 STRM 文件失败: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return fmt.Errorf("关闭 STRM 文件失败: %w", err)
+	}
+	if err := os.Rename(tempPath, targetPath); err != nil {
+		return fmt.Errorf("保存 STRM 文件失败: %w", err)
 	}
 	return nil
 }
@@ -437,6 +628,15 @@ func applyCloudJobUpdates(job *model.GuangyaCloudAddJob, updates map[string]any)
 	}
 	if value, ok := updates["completed_at"].(*time.Time); ok {
 		job.CompletedAt = value
+	}
+	if value, ok := updates["smart_strm_notified"].(bool); ok {
+		job.SmartStrmNotified = value
+	}
+	if value, ok := updates["smart_strm_notified_at"].(*time.Time); ok {
+		job.SmartStrmNotifiedAt = value
+	}
+	if value, ok := updates["smart_strm_storage_path"].(string); ok {
+		job.SmartStrmStoragePath = value
 	}
 }
 

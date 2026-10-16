@@ -27,6 +27,11 @@ const routes = [
     component: () => import('@/views/MediaInconsistentView.vue'),
   },
   {
+    path: '/system-test',
+    name: 'SystemTest',
+    component: () => import('@/views/SystemTestView.vue'),
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('@/views/SettingsView.vue'),

@@ -187,6 +187,7 @@ func (h *GuangyaHandler) createCloudTask(ctx context.Context, c *app.RequestCont
 		URL                 string                      `json:"url"`
 		ParentID            string                      `json:"parent_id"`
 		NewName             string                      `json:"new_name"`
+		StorageMappingID    uint                        `json:"storage_mapping_id"`
 		FileIndexes         []int                       `json:"file_indexes"`
 		ResolvedIsDirectory bool                        `json:"resolved_is_directory"`
 		SelectedFiles       []guangya.SelectedCloudFile `json:"selected_files"`
@@ -200,6 +201,7 @@ func (h *GuangyaHandler) createCloudTask(ctx context.Context, c *app.RequestCont
 		URL:                 req.URL,
 		ParentID:            req.ParentID,
 		NewName:             req.NewName,
+		StorageMappingID:    req.StorageMappingID,
 		ResolvedIsDirectory: req.ResolvedIsDirectory,
 		SelectedFiles:       req.SelectedFiles,
 	})
@@ -248,6 +250,11 @@ func (h *GuangyaHandler) streamCloudJobs(ctx context.Context, c *app.RequestCont
 
 	writer := sse.NewWriter(c)
 	defer writer.Close()
+	c.Response.Header.Set("Cache-Control", "no-cache, no-transform")
+	c.Response.Header.Set("X-Accel-Buffering", "no")
+	if err := writer.WriteKeepAlive(); err != nil {
+		return
+	}
 
 	active, err := h.service.ActiveCloudAddJobs()
 	if err != nil {

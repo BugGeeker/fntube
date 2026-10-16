@@ -1,6 +1,7 @@
 package guangya
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"fntube/internal/model"
+	"fntube/internal/smartstrm"
 )
 
 const (
@@ -133,6 +135,7 @@ type Service struct {
 	subscriberMu   sync.Mutex
 	subscribers    map[uint64]chan CloudJobEvent
 	nextSubscriber uint64
+	runSmartStrm   func(model.SmartStrmConfig, string, string) error
 }
 
 func NewService(db *gorm.DB) *Service {
@@ -153,6 +156,16 @@ func newService(db *gorm.DB, factory clientFactory) *Service {
 		now:         time.Now,
 		sessions:    make(map[string]*loginSession),
 		subscribers: make(map[uint64]chan CloudJobEvent),
+		runSmartStrm: func(config model.SmartStrmConfig, taskName, storagePath string) error {
+			return smartstrm.RunTask(
+				context.Background(),
+				config.URL,
+				config.Username,
+				config.Password,
+				taskName,
+				storagePath,
+			)
+		},
 	}
 }
 
@@ -202,12 +215,16 @@ type SelectedCloudFile struct {
 }
 
 type CreateCloudTaskInput struct {
-	FileIndexes         []int
-	URL                 string
-	ParentID            string
-	NewName             string
-	ResolvedIsDirectory bool
-	SelectedFiles       []SelectedCloudFile
+	FileIndexes          []int
+	URL                  string
+	ParentID             string
+	NewName              string
+	StorageMappingID     uint
+	ResolvedIsDirectory  bool
+	SelectedFiles        []SelectedCloudFile
+	SmartStrmTaskName    string
+	SmartStrmStorageRoot string
+	StrmSavePath         string
 }
 
 func (s *Service) cloudConfig() (model.GuangyaConfig, error) {
@@ -412,6 +429,9 @@ func (s *Service) CreateCloudTask(input CreateCloudTaskInput) (CloudTask, error)
 	if newName == "" {
 		return CloudTask{}, errors.New("名称不能为空")
 	}
+	if err := s.prepareSmartStrmTarget(&input); err != nil {
+		return CloudTask{}, err
+	}
 	result, err := cloudOperation(s, func(client cloudClient) (guangyaclient.CloudCreateTaskResponse, error) {
 		return client.CloudCreateTask(input.FileIndexes, url, strings.TrimSpace(input.ParentID), newName)
 	})
@@ -422,6 +442,37 @@ func (s *Service) CreateCloudTask(input CreateCloudTaskInput) (CloudTask, error)
 		return CloudTask{}, fmt.Errorf("保存云添加后处理任务失败: %w", err)
 	}
 	return CloudTask{TaskID: result.Data.TaskID, URL: result.Data.URL}, nil
+}
+
+func (s *Service) prepareSmartStrmTarget(input *CreateCloudTaskInput) error {
+	var mapping model.StorageMapping
+	var err error
+	if input.StorageMappingID > 0 {
+		err = s.db.First(&mapping, input.StorageMappingID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("所选存储配置不存在")
+		}
+		if err != nil {
+			return fmt.Errorf("读取存储配置失败: %w", err)
+		}
+		if strings.TrimSpace(mapping.GuangyaFolderID) != strings.TrimSpace(input.ParentID) {
+			return errors.New("所选存储配置与保存目录不一致")
+		}
+	} else {
+		err = s.db.Where("guangya_folder_id = ?", strings.TrimSpace(input.ParentID)).
+			Order("id asc").
+			First(&mapping).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("读取存储配置失败: %w", err)
+		}
+	}
+	input.SmartStrmTaskName = strings.TrimSpace(mapping.SmartStrmTaskName)
+	input.SmartStrmStorageRoot = strings.TrimSpace(mapping.GuangyaFolderPath)
+	input.StrmSavePath = strings.TrimSpace(mapping.StrmSavePath)
+	return nil
 }
 
 func cloudFiles(files []guangyaclient.CloudSubfile) []CloudFile {

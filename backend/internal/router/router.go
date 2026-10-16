@@ -1,6 +1,7 @@
 package router
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -71,10 +72,58 @@ func Register(h *server.Hertz, db *gorm.DB, trimSvc *trimmedia.Service, sched *s
 	// 总览页
 	handler.RegisterDashboardHandlers(h, db, trimSvc)
 
-	// 静态文件托管（前端构建产物），优先从应用安装目录读取
-	staticDir := "./app/www"
+	// 系统能力测试
+	handler.RegisterSystemTestHandlers(h)
+
+	// 静态文件托管（前端构建产物）。不同 fnOS 安装方式的目录层级可能不同，
+	// 按实际存在的 index.html 选择目录。
+	staticCandidates := []string{"./app/www"}
 	if appDest := os.Getenv("TRIM_APPDEST"); appDest != "" {
-		staticDir = filepath.Join(appDest, "app", "www")
+		staticCandidates = append([]string{
+			filepath.Join(appDest, "www"),
+			filepath.Join(appDest, "app", "www"),
+		}, staticCandidates...)
 	}
-	h.Static("/", staticDir)
+	if executable, err := os.Executable(); err == nil {
+		staticCandidates = append(staticCandidates,
+			filepath.Join(filepath.Dir(executable), "..", "www"),
+		)
+	}
+
+	staticDir := staticCandidates[0]
+	for _, candidate := range staticCandidates {
+		indexPath := filepath.Join(candidate, "index.html")
+		if info, err := os.Stat(indexPath); err == nil && !info.IsDir() {
+			staticDir = candidate
+			break
+		}
+	}
+	indexPath := filepath.Join(staticDir, "index.html")
+	hlog.Infof("frontend static directory: %s (index exists: %t)", staticDir, fileExists(indexPath))
+	serveIndex := func(ctx context.Context, c *app.RequestContext) {
+		c.File(indexPath)
+	}
+	h.GET("/", serveIndex)
+	h.GET("/index.html", serveIndex)
+	h.StaticFS("/", &app.FS{
+		Root:        staticDir,
+		PathRewrite: stripGatewayPrefix,
+	})
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+func stripGatewayPrefix(c *app.RequestContext) []byte {
+	path := c.Path()
+	prefix := []byte("/app/FnTube")
+	if bytes.Equal(path, prefix) {
+		return []byte("/")
+	}
+	if bytes.HasPrefix(path, append(prefix, '/')) {
+		return path[len(prefix):]
+	}
+	return path
 }

@@ -200,7 +200,12 @@ func testDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(&model.GuangyaConfig{}, &model.GuangyaCloudAddJob{}); err != nil {
+	if err := db.AutoMigrate(
+		&model.GuangyaConfig{},
+		&model.GuangyaCloudAddJob{},
+		&model.SmartStrmConfig{},
+		&model.StorageMapping{},
+	); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
 	sqlDB, err := db.DB()
@@ -417,6 +422,16 @@ func TestCloudOperationsPassThroughSDKData(t *testing.T) {
 	}
 	service := newService(db, func() authClient { return &fakeClient{} })
 	service.newCloud = func(credentials) cloudClient { return client }
+	mapping := model.StorageMapping{
+		Name:              "日本有码",
+		GuangyaFolderID:   "parent",
+		GuangyaFolderPath: "/日本/有码",
+		SmartStrmTaskName: "日本",
+		StrmSavePath:      "/日本/有码",
+	}
+	if err := db.Create(&mapping).Error; err != nil {
+		t.Fatalf("create storage mapping: %v", err)
+	}
 
 	resolved, err := service.ResolveURL("  magnet:?xt=urn:btih:test  ")
 	if err != nil {
@@ -446,10 +461,11 @@ func TestCloudOperationsPassThroughSDKData(t *testing.T) {
 	}
 
 	task, err := service.CreateCloudTask(CreateCloudTaskInput{
-		FileIndexes: []int{7},
-		URL:         " magnet:?xt=urn:btih:resolved ",
-		ParentID:    "parent",
-		NewName:     "movie",
+		FileIndexes:      []int{7},
+		URL:              " magnet:?xt=urn:btih:resolved ",
+		ParentID:         "parent",
+		NewName:          "movie",
+		StorageMappingID: mapping.ID,
 	})
 	if err != nil {
 		t.Fatalf("create cloud task: %v", err)
@@ -458,6 +474,14 @@ func TestCloudOperationsPassThroughSDKData(t *testing.T) {
 		client.taskParent != "parent" || client.taskName != "movie" || len(client.taskIndexes) != 1 ||
 		client.taskIndexes[0] != 7 {
 		t.Fatalf("unexpected task: %#v %#v", task, client)
+	}
+	var job model.GuangyaCloudAddJob
+	if err := db.Where("task_id = ?", "task").First(&job).Error; err != nil {
+		t.Fatalf("read cloud job: %v", err)
+	}
+	if job.SmartStrmTaskName != "日本" || job.SmartStrmStorageRoot != "/日本/有码" ||
+		job.StrmSavePath != "/日本/有码" {
+		t.Fatalf("unexpected SmartStrm target: %#v", job)
 	}
 }
 

@@ -135,6 +135,7 @@ export const createGuangyaCloudTask = (payload: {
   url: string
   parentId: string
   newName: string
+  storageMappingId?: number
   fileIndexes: number[]
   resolvedIsDirectory: boolean
   selectedFiles: GuangyaSelectedCloudFile[]
@@ -143,6 +144,7 @@ export const createGuangyaCloudTask = (payload: {
     url: payload.url,
     parent_id: payload.parentId,
     new_name: payload.newName,
+    storage_mapping_id: payload.storageMappingId || 0,
     file_indexes: payload.fileIndexes,
     resolved_is_directory: payload.resolvedIsDirectory,
     selected_files: payload.selectedFiles,

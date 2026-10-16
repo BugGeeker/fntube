@@ -35,11 +35,8 @@
           aria-label="隐藏图片" />
       </div>
       <div class="setting-row">
-        <span class="setting-label">
-          <component :is="uiStore.darkMode ? BulbFilled : BulbOutlined" /> 深色模式
-        </span>
-        <a-switch v-model:checked="darkModeChecked" checked-children="开" un-checked-children="关"
-          aria-label="深色模式" />
+        <span class="setting-label"><DesktopOutlined /> 主题模式</span>
+        <a-segmented v-model:value="themeMode" :options="themeModeOptions" aria-label="主题模式" />
       </div>
     </a-card>
   </div>
@@ -48,8 +45,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { SettingOutlined, TranslationOutlined, CloudOutlined, LinkOutlined, DatabaseOutlined, HistoryOutlined, PictureOutlined, BulbFilled, BulbOutlined } from '@ant-design/icons-vue'
-import { useUiStore } from '@/stores/ui'
+import { SettingOutlined, TranslationOutlined, CloudOutlined, LinkOutlined, DatabaseOutlined, HistoryOutlined, PictureOutlined, DesktopOutlined } from '@ant-design/icons-vue'
+import { useUiStore, type ThemeMode } from '@/stores/ui'
 
 const router = useRouter()
 const uiStore = useUiStore()
@@ -59,9 +56,15 @@ const hideImagesChecked = computed({
   set: (val: boolean) => uiStore.setHideImages(val),
 })
 
-const darkModeChecked = computed({
-  get: () => uiStore.darkMode,
-  set: (val: boolean) => uiStore.setDarkMode(val),
+const themeModeOptions = [
+  { label: '跟随系统', value: 'system' },
+  { label: '深色模式', value: 'dark' },
+  { label: '亮色模式', value: 'light' },
+]
+
+const themeMode = computed({
+  get: () => uiStore.themeMode,
+  set: (val: ThemeMode) => uiStore.setThemeMode(val),
 })
 </script>
 

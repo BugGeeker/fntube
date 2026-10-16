@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FnTube 授权结果</title>
+  </head>
+  <body>
+    <p id="status">正在处理授权结果...</p>
+    <script>
+      const params = new URLSearchParams(window.location.search)
+      let path
+      try {
+        const rawPath = params.get('path')
+        path = rawPath ? JSON.parse(rawPath) : undefined
+      } catch {
+        path = undefined
+      }
+      const result = {
+        status: params.get('status') || undefined,
+        error: params.get('error') || undefined,
+        method: params.get('method') || undefined,
+        appName: params.get('appName') || undefined,
+        state: params.get('state') || undefined,
+        path,
+      }
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({ type: 'fntube:shared-auth-result', result }, window.location.origin)
+        document.getElementById('status').textContent = '授权结果已返回，可以关闭此页面。'
+        window.close()
+      } else {
+        document.getElementById('status').textContent = '授权已完成，请返回 FnTube 并刷新授权目录。'
+      }
+    </script>
+  </body>
+</html>

@@ -3,6 +3,9 @@ package guangya
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,6 +97,239 @@ func TestProcessSingleFileCreatesFolderAndMovesFile(t *testing.T) {
 	if len(client.moveFileIDs) != 1 || client.moveFileIDs[0][0] != "movie" ||
 		client.moveParents[0] != "target-folder" {
 		t.Fatalf("unexpected move calls: ids=%#v parents=%#v", client.moveFileIDs, client.moveParents)
+	}
+}
+
+func TestProcessCloudJobNotifiesSmartStrmWithOrganizedFolder(t *testing.T) {
+	client := &fakeCloudClient{
+		taskListResult: completedCloudTask("T28-205.mp4", false),
+		filesByParent: map[string]guangyaclient.FileListResponse{
+			"destination": fileList(guangyaclient.FileItem{
+				FileID: "movie", FileName: "T28-205.mp4", ParentID: "destination", ResType: 1,
+			}),
+			"target-folder": fileList(),
+		},
+		createDirResult: guangyaclient.FSCreateDirResponse{
+			Data: guangyaclient.FSCreateDirData{
+				FileID: "target-folder", FileName: "T28-205", ParentID: "destination", ResType: 2,
+			},
+		},
+		moveResult: guangyaclient.FileTaskResponse{
+			Data: guangyaclient.FileTaskData{TaskID: "move-task"},
+		},
+		fileTaskStatus: guangyaclient.TaskStatusResponse{
+			Data: guangyaclient.TaskStatusData{Status: 2, Progress: 100},
+		},
+	}
+	service := newCloudJobTestService(t, client)
+	strmRoot := t.TempDir()
+	if err := service.db.Create(&model.SmartStrmConfig{
+		URL: "http://smartstrm", Username: "tester", Password: "secret", StrmRootPath: strmRoot,
+	}).Error; err != nil {
+		t.Fatalf("create SmartStrm config: %v", err)
+	}
+	var actualTaskName string
+	var actualStoragePath string
+	service.runSmartStrm = func(_ model.SmartStrmConfig, taskName, storagePath string) error {
+		actualTaskName = taskName
+		actualStoragePath = storagePath
+		return nil
+	}
+	job := cloudJob(t, false, "T28-205.mp4", nil)
+	job.SmartStrmTaskName = "日本"
+	job.SmartStrmStorageRoot = "/日本/有码/T28"
+	job.StrmSavePath = t.TempDir()
+	if err := service.db.Create(&job).Error; err != nil {
+		t.Fatalf("create cloud job: %v", err)
+	}
+
+	status, err := service.processCloudAddJob(&job)
+	if err != nil {
+		t.Fatalf("process job: %v", err)
+	}
+	if status != "" {
+		t.Fatalf("status = %q, want pending", status)
+	}
+	if actualTaskName != "日本" || actualStoragePath != "/日本/有码/T28/T28-205" {
+		t.Fatalf("unexpected SmartStrm call: task=%q path=%q", actualTaskName, actualStoragePath)
+	}
+	if !job.SmartStrmNotified || job.SmartStrmNotifiedAt == nil ||
+		job.SmartStrmStoragePath != "/日本/有码/T28/T28-205" {
+		t.Fatalf("SmartStrm notification was not persisted on the job: %#v", job)
+	}
+}
+
+func TestProcessCloudJobDoesNotRetrySmartStrmNotificationAfterFailure(t *testing.T) {
+	client := &fakeCloudClient{
+		taskListResult: completedCloudTask("T28-205.mp4", false),
+		filesByParent: map[string]guangyaclient.FileListResponse{
+			"destination": fileList(guangyaclient.FileItem{
+				FileID: "movie", FileName: "T28-205.mp4", ParentID: "destination", ResType: 1,
+			}),
+			"target-folder": fileList(),
+		},
+		createDirResult: guangyaclient.FSCreateDirResponse{
+			Data: guangyaclient.FSCreateDirData{
+				FileID: "target-folder", FileName: "T28-205", ParentID: "destination", ResType: 2,
+			},
+		},
+		moveResult: guangyaclient.FileTaskResponse{
+			Data: guangyaclient.FileTaskData{TaskID: "move-task"},
+		},
+		fileTaskStatus: guangyaclient.TaskStatusResponse{
+			Data: guangyaclient.TaskStatusData{Status: 2, Progress: 100},
+		},
+	}
+	service := newCloudJobTestService(t, client)
+	if err := service.db.Create(&model.SmartStrmConfig{
+		URL: "http://smartstrm", Username: "tester", Password: "secret",
+	}).Error; err != nil {
+		t.Fatalf("create SmartStrm config: %v", err)
+	}
+	calls := 0
+	service.runSmartStrm = func(model.SmartStrmConfig, string, string) error {
+		calls++
+		return errors.New("request failed")
+	}
+	job := cloudJob(t, false, "T28-205.mp4", nil)
+	job.SmartStrmTaskName = "日本"
+	job.SmartStrmStorageRoot = "/日本/有码/T28"
+	if err := service.db.Create(&job).Error; err != nil {
+		t.Fatalf("create cloud job: %v", err)
+	}
+
+	status, err := service.processCloudAddJob(&job)
+	if status != cloudJobFailed || err == nil {
+		t.Fatalf("unexpected first attempt: status=%q err=%v", status, err)
+	}
+	if !job.SmartStrmNotified || calls != 1 {
+		t.Fatalf("notification attempt was not persisted: notified=%v calls=%d", job.SmartStrmNotified, calls)
+	}
+	if finishErr := service.finishCloudJobAttempt(&job, status, err); finishErr != nil {
+		t.Fatalf("finish failed attempt: %v", finishErr)
+	}
+
+	service.processPendingCloudJobs()
+	if calls != 1 {
+		t.Fatalf("SmartStrm notification was retried: calls=%d", calls)
+	}
+}
+
+func TestProcessCloudJobWaitsForGeneratedStrmWithoutNotifyingAgain(t *testing.T) {
+	service := newCloudJobTestService(t, &fakeCloudClient{})
+	if err := service.db.Create(&model.SmartStrmConfig{
+		URL: "http://smartstrm", StrmRootPath: t.TempDir(),
+	}).Error; err != nil {
+		t.Fatalf("create SmartStrm config: %v", err)
+	}
+	calls := 0
+	service.runSmartStrm = func(model.SmartStrmConfig, string, string) error {
+		calls++
+		return nil
+	}
+	job := cloudJob(t, false, "T28-205.mp4", nil)
+	job.SmartStrmNotified = true
+	job.SmartStrmStorageRoot = "/日本/有码"
+	job.SmartStrmStoragePath = "/日本/有码/T28/T28-205"
+	job.StrmSavePath = t.TempDir()
+
+	status, err := service.processCloudAddJob(&job)
+	if err != nil {
+		t.Fatalf("process job: %v", err)
+	}
+	if status != "" || job.CurrentStep != "等待 SmartStrm 生成 STRM" || job.Progress != 99 {
+		t.Fatalf("unexpected waiting job: status=%q job=%#v", status, job)
+	}
+	if calls != 0 {
+		t.Fatalf("SmartStrm was notified %d times while waiting", calls)
+	}
+}
+
+func TestProcessCloudJobCopiesGeneratedStrm(t *testing.T) {
+	t.Setenv("TRIM_PKGVAR", "/var/apps/fntube/var")
+	service := newCloudJobTestService(t, &fakeCloudClient{})
+	strmRoot := t.TempDir()
+	saveRoot := t.TempDir()
+	if err := service.db.Create(&model.SmartStrmConfig{
+		URL: "http://smartstrm", StrmRootPath: strmRoot,
+	}).Error; err != nil {
+		t.Fatalf("create SmartStrm config: %v", err)
+	}
+	sourceDir := filepath.Join(strmRoot, "日本", "有码", "T28", "T28-205")
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatalf("create source directory: %v", err)
+	}
+	sourceContent := "http://example.test/T28-205.mp4"
+	if err := os.WriteFile(filepath.Join(sourceDir, "T28-205.strm"), []byte(sourceContent), 0644); err != nil {
+		t.Fatalf("write source strm: %v", err)
+	}
+	job := cloudJob(t, false, "T28-205.mp4", nil)
+	job.SmartStrmNotified = true
+	job.SmartStrmStorageRoot = "/日本/有码"
+	job.SmartStrmStoragePath = "/日本/有码/T28/T28-205"
+	job.StrmSavePath = saveRoot
+
+	status, err := service.processCloudAddJob(&job)
+	if err != nil {
+		t.Fatalf("process job: %v", err)
+	}
+	if status != cloudJobCompleted {
+		t.Fatalf("status = %q, want %q", status, cloudJobCompleted)
+	}
+	targetPath := filepath.Join(saveRoot, "T28", "T28-205", "T28-205.strm")
+	content, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read copied strm: %v", err)
+	}
+	if string(content) != sourceContent {
+		t.Fatalf("copied content = %q, want %q", content, sourceContent)
+	}
+}
+
+func TestProcessCloudJobRejectsStrmCopyOutsideFnOS(t *testing.T) {
+	t.Setenv("TRIM_PKGVAR", "")
+	service := newCloudJobTestService(t, &fakeCloudClient{})
+	strmRoot := t.TempDir()
+	if err := service.db.Create(&model.SmartStrmConfig{
+		URL: "http://smartstrm", StrmRootPath: strmRoot,
+	}).Error; err != nil {
+		t.Fatalf("create SmartStrm config: %v", err)
+	}
+	sourceDir := filepath.Join(strmRoot, "日本", "有码", "T28", "T28-205")
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatalf("create source directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "T28-205.strm"), []byte("movie"), 0644); err != nil {
+		t.Fatalf("write source strm: %v", err)
+	}
+	job := cloudJob(t, false, "T28-205.mp4", nil)
+	job.SmartStrmNotified = true
+	job.SmartStrmStorageRoot = "/日本/有码"
+	job.SmartStrmStoragePath = "/日本/有码/T28/T28-205"
+	job.StrmSavePath = t.TempDir()
+
+	status, err := service.processCloudAddJob(&job)
+	if status != cloudJobFailed || err == nil || !strings.Contains(err.Error(), "不是飞牛环境") {
+		t.Fatalf("unexpected result: status=%q err=%v", status, err)
+	}
+}
+
+func TestProcessCloudJobRejectsStoragePathOutsideMapping(t *testing.T) {
+	service := newCloudJobTestService(t, &fakeCloudClient{})
+	if err := service.db.Create(&model.SmartStrmConfig{
+		URL: "http://smartstrm", StrmRootPath: t.TempDir(),
+	}).Error; err != nil {
+		t.Fatalf("create SmartStrm config: %v", err)
+	}
+	job := cloudJob(t, false, "T28-205.mp4", nil)
+	job.SmartStrmNotified = true
+	job.SmartStrmStorageRoot = "/日本/有码"
+	job.SmartStrmStoragePath = "/欧美/T28/T28-205"
+	job.StrmSavePath = t.TempDir()
+
+	status, err := service.processCloudAddJob(&job)
+	if status != cloudJobFailed || err == nil || !strings.Contains(err.Error(), "不在存储映射目录") {
+		t.Fatalf("unexpected result: status=%q err=%v", status, err)
 	}
 }
 

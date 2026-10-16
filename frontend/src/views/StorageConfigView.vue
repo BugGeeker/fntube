@@ -40,11 +40,11 @@
               <span>{{ mapping.guangya_folder_path }}</span>
             </div>
             <div class="mapping-row">
-              <span>SmartStrm 任务名</span>
+              <span>SmartStrm任务</span>
               <span>{{ mapping.smartstrm_task_name }}</span>
             </div>
             <div class="mapping-row">
-              <span>strm 保存目录</span>
+              <span>Strm保存目录</span>
               <span>{{ mapping.strm_save_path }}</span>
             </div>
             <a-space class="mapping-actions">

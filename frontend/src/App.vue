@@ -9,12 +9,14 @@
         <div class="menu-footer" :class="{ 'menu-footer-collapsed': collapsed }" role="contentinfo">
           <div class="menu-actions">
             <a-switch v-model:checked="hideImagesChecked" checked-children="隐图" un-checked-children="显图" />
-            <a-button :type="uiStore.darkMode ? 'primary' : 'default'" shape="circle" size="small"
-              @click="uiStore.toggleDarkMode()">
-              <template #icon>
-                <component :is="uiStore.darkMode ? BulbFilled : BulbOutlined" />
-              </template>
-            </a-button>
+            <a-tooltip :title="themeModeLabel">
+              <a-button :type="uiStore.themeMode === 'dark' ? 'primary' : 'default'" shape="circle" size="small"
+                :aria-label="themeModeLabel" @click="uiStore.cycleThemeMode()">
+                <template #icon>
+                  <component :is="themeModeIcon" />
+                </template>
+              </a-button>
+            </a-tooltip>
           </div>
           <span v-if="appVersion" class="app-version">v{{ appVersion }}</span>
         </div>
@@ -55,6 +57,7 @@ import {
   ScheduleOutlined,
   BulbOutlined,
   BulbFilled,
+  DesktopOutlined,
   SearchOutlined,
   CloudOutlined,
   LinkOutlined,
@@ -82,6 +85,20 @@ const themeConfig = computed(() => ({
   algorithm: uiStore.darkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
 }))
 
+const themeModeLabel = computed(() => {
+  const labels = {
+    system: '主题：跟随系统',
+    dark: '主题：深色模式',
+    light: '主题：亮色模式',
+  }
+  return labels[uiStore.themeMode]
+})
+
+const themeModeIcon = computed(() => {
+  if (uiStore.themeMode === 'system') return DesktopOutlined
+  return uiStore.themeMode === 'dark' ? BulbFilled : BulbOutlined
+})
+
 const collapsed = ref(false)
 
 function checkCollapsed() {
@@ -90,6 +107,7 @@ function checkCollapsed() {
 
 onMounted(async () => {
   checkCollapsed()
+  uiStore.initializePlatformTheme()
   window.addEventListener('resize', checkCollapsed)
   try {
     const { data } = await request.get<{ version: string }>('/version')
@@ -100,6 +118,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  uiStore.disposePlatformTheme()
   window.removeEventListener('resize', checkCollapsed)
 })
 
@@ -128,6 +147,11 @@ const menuItems = [
         key: '/media-inconsistent',
         icon: () => h(ToolOutlined),
         label: '媒体刮削检查',
+      },
+      {
+        key: '/system-test',
+        icon: () => h(ToolOutlined),
+        label: '系统能力测试',
       },
     ],
   },
@@ -191,7 +215,7 @@ const mobileTabItems = [
 
 const mobileSelectedKey = computed(() => {
   if (['/settings', '/config', '/metatube-config', '/guangya-config', '/smartstrm-config', '/storage-config', '/guangya-cloud-jobs'].includes(route.path)) return '/settings'
-  if (route.path.startsWith('/tools')) return '/tools'
+  if (['/media-inconsistent', '/system-test'].includes(route.path)) return '/tools'
   return getMenuKey(route.path)
 })
 

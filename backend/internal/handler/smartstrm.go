@@ -2,17 +2,14 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"gorm.io/gorm"
+
+	"fntube/internal/smartstrm"
 )
 
 type SmartStrmHandler struct {
@@ -27,21 +24,8 @@ type smartStrmConfigView struct {
 	StrmRootPath string `json:"strm_root_path"`
 }
 
-type smartStrmVersion struct {
-	Version         string  `json:"version"`
-	RemoteVersion   string  `json:"remote_version"`
-	IsNew           bool    `json:"is_new"`
-	Notify          string  `json:"notify"`
-	LicenseStoreURL *string `json:"license_store_url"`
-	ChangeLogURL    string  `json:"change_log_url"`
-}
-
-type smartStrmTask struct {
-	Name    string                 `json:"name"`
-	Config  map[string]interface{} `json:"config"`
-	NextRun interface{}            `json:"next_run"`
-	Running bool                   `json:"running"`
-}
+type smartStrmVersion = smartstrm.Version
+type smartStrmTask = smartstrm.Task
 
 func RegisterSmartStrmHandlers(h *server.Hertz, db *gorm.DB) {
 	handler := &SmartStrmHandler{db: db}
@@ -174,33 +158,7 @@ func testSmartStrmConnection(
 	username string,
 	password string,
 ) (smartStrmVersion, error) {
-	client, err := loginSmartStrm(ctx, baseURL, username, password)
-	if err != nil {
-		return smartStrmVersion{}, err
-	}
-
-	versionURL := strings.TrimRight(baseURL, "/") + "/api/version"
-	versionRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, versionURL, nil)
-	if err != nil {
-		return smartStrmVersion{}, fmt.Errorf("创建版本请求失败: %w", err)
-	}
-	versionResponse, err := client.Do(versionRequest)
-	if err != nil {
-		return smartStrmVersion{}, fmt.Errorf("查询版本失败: %w", err)
-	}
-	defer versionResponse.Body.Close()
-	if versionResponse.StatusCode != http.StatusOK {
-		return smartStrmVersion{}, fmt.Errorf("查询版本失败，服务返回状态码 %d", versionResponse.StatusCode)
-	}
-
-	var version smartStrmVersion
-	if err := json.NewDecoder(versionResponse.Body).Decode(&version); err != nil {
-		return version, fmt.Errorf("解析版本信息失败: %w", err)
-	}
-	if version.Version == "" {
-		return version, fmt.Errorf("版本接口未返回当前版本")
-	}
-	return version, nil
+	return smartstrm.TestConnection(ctx, baseURL, username, password)
 }
 
 func fetchSmartStrmTasks(
@@ -209,73 +167,5 @@ func fetchSmartStrmTasks(
 	username string,
 	password string,
 ) (map[string]smartStrmTask, error) {
-	client, err := loginSmartStrm(ctx, baseURL, username, password)
-	if err != nil {
-		return nil, err
-	}
-
-	tasksURL := strings.TrimRight(baseURL, "/") + "/api/tasks"
-	tasksRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, tasksURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("创建任务请求失败: %w", err)
-	}
-	tasksResponse, err := client.Do(tasksRequest)
-	if err != nil {
-		return nil, fmt.Errorf("查询任务失败: %w", err)
-	}
-	defer tasksResponse.Body.Close()
-	if tasksResponse.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("查询任务失败，服务返回状态码 %d", tasksResponse.StatusCode)
-	}
-
-	var tasks map[string]smartStrmTask
-	if err := json.NewDecoder(tasksResponse.Body).Decode(&tasks); err != nil {
-		return nil, fmt.Errorf("解析任务列表失败: %w", err)
-	}
-	return tasks, nil
-}
-
-func loginSmartStrm(
-	ctx context.Context,
-	baseURL string,
-	username string,
-	password string,
-) (*http.Client, error) {
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		return nil, fmt.Errorf("创建登录会话失败: %w", err)
-	}
-	client := &http.Client{
-		Timeout: 15 * time.Second,
-		Jar:     jar,
-		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-
-	form := url.Values{
-		"username": {username},
-		"password": {password},
-	}
-	loginURL := strings.TrimRight(baseURL, "/") + "/login"
-	loginRequest, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		loginURL,
-		strings.NewReader(form.Encode()),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("创建登录请求失败: %w", err)
-	}
-	loginRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	loginResponse, err := client.Do(loginRequest)
-	if err != nil {
-		return nil, fmt.Errorf("登录请求失败: %w", err)
-	}
-	loginResponse.Body.Close()
-	if loginResponse.StatusCode != http.StatusFound {
-		return nil, fmt.Errorf("登录失败，服务返回状态码 %d", loginResponse.StatusCode)
-	}
-	return client, nil
+	return smartstrm.FetchTasks(ctx, baseURL, username, password)
 }

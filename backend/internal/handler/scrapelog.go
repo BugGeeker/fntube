@@ -154,6 +154,11 @@ func (h *ScrapeLogHandler) stream(ctx context.Context, c *app.RequestContext) {
 
 	writer := sse.NewWriter(c)
 	defer writer.Close()
+	c.Response.Header.Set("Cache-Control", "no-cache, no-transform")
+	c.Response.Header.Set("X-Accel-Buffering", "no")
+	if err := writer.WriteKeepAlive(); err != nil {
+		return
+	}
 
 	active, err := h.scheduler.ActiveManualScrapeLogs()
 	if err != nil {

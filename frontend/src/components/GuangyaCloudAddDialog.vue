@@ -39,6 +39,9 @@ const selectedIndexes = ref<number[]>([])
 const folderOpen = ref(false)
 const selectedFolder = ref<GuangyaFolderSelection>({ ...ROOT_FOLDER })
 const storageMappings = ref<StorageMapping[]>([])
+const selectedStorageMapping = computed(() =>
+  storageMappings.value.find((mapping) => isStorageMappingSelected(mapping)),
+)
 
 interface FileTreeNode {
   key: string
@@ -338,6 +341,7 @@ async function create() {
       url: resolved.value.url || props.magnet,
       parentId: selectedFolder.value.id,
       newName: name.value.trim(),
+      storageMappingId: selectedStorageMapping.value?.id,
       fileIndexes: selectedIndexes.value,
       resolvedIsDirectory: Boolean(resolved.value.subfiles?.length),
       selectedFiles: selectedFiles

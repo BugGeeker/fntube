@@ -16,13 +16,51 @@ start_process() {
     fi
 
     log_msg "Starting process ..."
-    # run cmd to start process
-    bash -c "${CMD}" >> ${LOG_FILE} 2>&1 &
-    # write pid to pidfile
-    printf "%s" "$!" > ${PID_FILE}
-    # log_msg "CMD = ${CMD}"
-    # log_msg "pid = $!"
-    return 0
+    rm -f "${TRIM_APPDEST}/app.sock"
+    FNTUBE_UNIFIED_GATEWAY=1 bash -c "${CMD}" >> ${LOG_FILE} 2>&1 &
+    pid=$!
+    printf "%s" "${pid}" > ${PID_FILE}
+
+    SOCKET_PATH="${TRIM_APPDEST}/app.sock"
+    HEALTH_URL="http://localhost/app/FnTube/api/health"
+    CURL_HAS_UNIX_SOCKET=0
+    if command -v curl >/dev/null 2>&1 && curl --help all 2>/dev/null | grep -q -- "--unix-socket"; then
+        CURL_HAS_UNIX_SOCKET=1
+    fi
+
+    count=0
+    while [ $count -lt 15 ]; do
+        if ! check_process "${pid}"; then
+            rm -f "${PID_FILE}"
+            log_msg "Process exited before the gateway socket was ready."
+            tail -n 20 "${LOG_FILE}" > "${TRIM_TEMP_LOGFILE}" 2>/dev/null
+            return 1
+        fi
+
+        if [ -e "${SOCKET_PATH}" ] || [ -S "${SOCKET_PATH}" ]; then
+            if [ "${CURL_HAS_UNIX_SOCKET}" -eq 1 ]; then
+                if curl -fsS --max-time 2 --unix-socket "${SOCKET_PATH}" "${HEALTH_URL}" >/dev/null 2>&1; then
+                    log_msg "Gateway socket health check passed."
+                    ls -ld "${TRIM_APPDEST}" "${SOCKET_PATH}" >> "${LOG_FILE}" 2>&1
+                    return 0
+                fi
+            else
+                log_msg "Gateway socket is ready; curl does not support Unix Socket health checks."
+                ls -ld "${TRIM_APPDEST}" "${SOCKET_PATH}" >> "${LOG_FILE}" 2>&1
+                return 0
+            fi
+        fi
+
+        sleep 1
+        count=$((count + 1))
+    done
+
+    rm -f "${PID_FILE}"
+    log_msg "Gateway socket health check failed."
+    ls -ld "${TRIM_APPDEST}" "${SOCKET_PATH}" "/var/apps/FnTube/target" >> "${LOG_FILE}" 2>&1
+    tail -n 20 "${LOG_FILE}" > "${TRIM_TEMP_LOGFILE}" 2>/dev/null
+    kill -TERM "${pid}" 2>/dev/null
+    return 1
 }
 
 stop_process() {

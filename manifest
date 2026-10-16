@@ -1,11 +1,13 @@
 appname               = FnTube
-version               = 1.0.12
+version               = 1.0.19
 display_name          = FnTube
 desc                  = FnTube - 飞牛影视媒体刮削工具，支持 MetaTube 搜索、媒体信息编辑、自动刮削计划与刮削记录管理
 platform              = x86
+os_min_version        = 1.1.3100
 source                = thirdparty
 maintainer            = BugGeeker
 maintainer_url        ="https://github.com/bugGeeker/fntube"
 distributor           = BugGeeker
 desktop_uidir         = ui
 desktop_applaunchname = FnTube.Application
+micro_app             = true

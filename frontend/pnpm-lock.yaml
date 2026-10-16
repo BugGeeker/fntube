@@ -11,6 +11,9 @@ importers:
       '@ant-design/icons-vue':
         specifier: ^7.0.1
         version: 7.0.1(vue@3.5.41(typescript@5.6.3))
+      '@trimjs/web-app':
+        specifier: ^0.5.0
+        version: 0.5.0
       ant-design-vue:
         specifier: ^4.2.6
         version: 4.2.6(vue@3.5.41(typescript@5.6.3))
@@ -481,6 +484,9 @@ packages:
 
   '@simonwep/pickr@1.8.0':
     resolution: {integrity: sha512-VaSD7TwktOsro5nQ/FjRx5JAJ09k5CNfGRHacgVRxeVPolUQwelz1SjL8HAOKZwTSmcnIObptpHABQS4zgN7sw==}
+
+  '@trimjs/web-app@0.5.0':
+    resolution: {integrity: sha512-YHDVSUDP4CYoMAkplNyv+IxB0bTTH8IYPikQEx4RrSoOe3/oQC8wCa8OrXTc57EcYJW1gYC7EC+Z1q5vGEvipA==}
 
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
@@ -1229,6 +1235,8 @@ snapshots:
     dependencies:
       core-js: 3.50.0
       nanopop: 2.4.2
+
+  '@trimjs/web-app@0.5.0': {}
 
   '@types/estree@1.0.9': {}
 
