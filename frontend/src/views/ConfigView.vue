@@ -1,5 +1,5 @@
 <template>
-  <a-card title="飞牛影视配置">
+  <a-card title="飞牛影视设置">
     <a-form :model="form" layout="vertical" @finish="handleSave">
       <a-form-item label="服务端地址" name="host" required>
         <a-input v-model:value="form.host" placeholder="如 http://127.0.0.1:5666/v" allow-clear />

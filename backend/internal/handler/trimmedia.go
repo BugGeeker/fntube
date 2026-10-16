@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"fntube/internal/metatube"
+	"fntube/internal/scheduler"
 	"fntube/internal/trimmedia"
 )
 
@@ -37,6 +38,7 @@ func RegisterTrimMediaHandlers(h *server.Hertz, db *gorm.DB, service *trimmedia.
 	g.POST("/test", hd.testConnection)
 	g.GET("/libraries", hd.getLibraries)
 	g.GET("/libraries/:libraryId/view-type", hd.getLibraryViewType)
+	g.GET("/libraries/:libraryId/inconsistent-items", hd.getInconsistentItems)
 	g.GET("/items/:libraryId", hd.getItems)
 	g.GET("/item/:itemId", hd.getItem)
 	g.GET("/seasons/:tvId", hd.getSeasons)
@@ -216,6 +218,74 @@ func (h *TrimMediaHandler) getItems(ctx context.Context, c *app.RequestContext) 
 	c.JSON(200, map[string]interface{}{
 		"total": total,
 		"items": items,
+	})
+}
+
+type inconsistentMediaItem struct {
+	GUID           string `json:"guid"`
+	Title          string `json:"title"`
+	OriginalTitle  string `json:"original_title"`
+	Poster         string `json:"poster"`
+	FileName       string `json:"file_name"`
+	ExpectedNumber string `json:"expected_number"`
+	ActualNumber   string `json:"actual_number"`
+	Reason         string `json:"reason"`
+}
+
+// getInconsistentItems 查询媒体库中文件名番号与刮削结果番号不一致的媒体。
+func (h *TrimMediaHandler) getInconsistentItems(ctx context.Context, c *app.RequestContext) {
+	if h.service == nil || !h.service.IsAuthenticated() {
+		c.JSON(401, map[string]string{"error": "not authenticated"})
+		return
+	}
+
+	libraryID := string(c.Param("libraryId"))
+	items, _, err := h.service.GetItems(libraryID, 0, -1)
+	if err != nil {
+		c.JSON(500, map[string]string{"error": err.Error()})
+		return
+	}
+
+	result := make([]inconsistentMediaItem, 0)
+	for _, item := range items {
+		streams, err := h.service.GetStreamList(item.Guid)
+		if err != nil || streams == nil || len(streams.Files) == 0 {
+			continue
+		}
+
+		fileName := strings.TrimSpace(streams.Files[0].FileName)
+		expectedNumber := scheduler.NormalizeMovieNumber(fileName)
+		if expectedNumber == "" {
+			continue
+		}
+
+		titleNumber := scheduler.NormalizeMovieNumber(item.Title)
+		if titleNumber == "" {
+			titleNumber = scheduler.NormalizeMovieNumber(item.OriginalTitle)
+		}
+		if titleNumber == expectedNumber {
+			continue
+		}
+
+		reason := "文件名番号与刮削结果番号不一致"
+		if titleNumber == "" {
+			reason = "刮削结果中未识别到番号"
+		}
+		result = append(result, inconsistentMediaItem{
+			GUID:           item.Guid,
+			Title:          item.Title,
+			OriginalTitle:  item.OriginalTitle,
+			Poster:         item.Poster,
+			FileName:       fileName,
+			ExpectedNumber: expectedNumber,
+			ActualNumber:   titleNumber,
+			Reason:         reason,
+		})
+	}
+
+	c.JSON(200, map[string]interface{}{
+		"total": len(result),
+		"items": result,
 	})
 }
 

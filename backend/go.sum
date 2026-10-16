@@ -1,3 +1,5 @@
+github.com/BugGeeker/guangyaclient-go v0.0.0-20261015023825-67a8a7d5df9d h1:yJcl0YhpHaOQgTl8ukSUq2Di7o7+zUcY6z7PIUIhfAA=
+github.com/BugGeeker/guangyaclient-go v0.0.0-20261015023825-67a8a7d5df9d/go.mod h1:vreXsX+i4K0HnL7iNO9bVGk+x6CpXE68FVkaRFwPYU0=
 github.com/bytedance/gopkg v0.1.4 h1:oZnQwnX82KAIWb7033bEwtxvTqXcYMxDBaQxo5JJHWM=
 github.com/bytedance/gopkg v0.1.4/go.mod h1:v1zWfPm21Fb+OsyXN2VAHdL6TBb2L88anLQgdyje6R4=
 github.com/bytedance/sonic v1.15.2 h1:90H+rcF/FwLXwfB1cudOLq/je83n683Utf4Cbp0xHCo=

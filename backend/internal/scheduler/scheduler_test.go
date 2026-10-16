@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"fntube/internal/metatube"
 	"fntube/internal/model"
 	"fntube/internal/trimmedia"
 )
@@ -103,6 +105,60 @@ func TestStartScrapeSingleCreatesRecordBeforeReturning(t *testing.T) {
 	}
 }
 
+func TestScrapeLogEventsPublishProgressAndDeletion(t *testing.T) {
+	sched, _ := newTestScheduler(t)
+	events, unsubscribe := sched.SubscribeScrapeLogs()
+	defer unsubscribe()
+
+	logEntry, err := sched.createScrapeLog("event-item-guid", "EVENT-001", model.ScrapeMethodManual, 0)
+	if err != nil {
+		t.Fatalf("create scrape log: %v", err)
+	}
+
+	select {
+	case event := <-events:
+		if event.Type != "progress" || event.Log.ID != logEntry.ID {
+			t.Fatalf("unexpected create event: %#v", event)
+		}
+		if event.Log.CurrentStep != "准备刮削" || event.Log.Progress != 5 {
+			t.Fatalf("unexpected initial progress: %#v", event.Log)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for create event")
+	}
+
+	steps, err := json.Marshal([]map[string]string{{
+		"step": model.StepSearch, "status": "running",
+	}})
+	if err != nil {
+		t.Fatalf("marshal steps: %v", err)
+	}
+	if err := sched.updateScrapeLog(logEntry, map[string]interface{}{"steps": string(steps)}); err != nil {
+		t.Fatalf("update scrape log: %v", err)
+	}
+
+	select {
+	case event := <-events:
+		if event.Log.CurrentStep != "搜索影片" || event.Log.Progress != 10 {
+			t.Fatalf("unexpected step progress: %#v", event.Log)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for progress event")
+	}
+
+	if err := sched.DeleteScrapeLog(logEntry.ID); err != nil {
+		t.Fatalf("delete scrape log: %v", err)
+	}
+	select {
+	case event := <-events:
+		if event.Type != "deleted" || event.ID != logEntry.ID {
+			t.Fatalf("unexpected delete event: %#v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for delete event")
+	}
+}
+
 func TestResolveScrapeKeyword(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -159,5 +215,79 @@ func TestResolveScrapeKeyword(t *testing.T) {
 				t.Fatalf("source = %q, want %q", gotSource, tt.wantSource)
 			}
 		})
+	}
+}
+
+func TestNormalizeMovieNumber(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "YMDD-284", want: "YMDD-284"},
+		{input: "YMDD-284-C", want: "YMDD-284"},
+		{input: "YMDD-284-1", want: "YMDD-284"},
+		{input: "ymdd_284_c", want: "YMDD-284"},
+		{input: "[javdb] YMDD-284-C", want: "YMDD-284"},
+		{input: "N1901", want: "N1901"},
+		{input: "N1901-C", want: "N1901"},
+		{input: "N1901-1", want: "N1901"},
+		{input: "N1901-U", want: "N1901"},
+		{input: "N1901-UC", want: "N1901"},
+		{input: "YMDD-284-UC", want: "YMDD-284"},
+		{input: "SSNI-311-S1", want: "SSNI-311"},
+		{input: "SSNI-311-C", want: "SSNI-311"},
+		{input: "RHJ-139 Red Hot Jam Vol.139 制服美女俱乐部", want: "RHJ-139"},
+		{input: "FC2-PPV-123456-1", want: "FC2-PPV-123456"},
+		{input: "not-a-number", want: ""},
+		{input: "", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := normalizeMovieNumber(tt.input); got != tt.want {
+				t.Fatalf("normalizeMovieNumber(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMatchingMovieResult(t *testing.T) {
+	results := []metatube.MovieSearchResult{
+		{ID: "wrong", Number: "NAGAE2-0588", Provider: "provider-a"},
+		{ID: "matched", Number: "YMDD-284", Provider: "provider-b"},
+	}
+
+	for _, keyword := range []string{"YMDD-284", "YMDD-284-C", "YMDD-284-1"} {
+		t.Run(keyword, func(t *testing.T) {
+			got, ok := matchingMovieResult(keyword, results)
+			if !ok {
+				t.Fatalf("matchingMovieResult(%q) found no result", keyword)
+			}
+			if got.ID != "matched" {
+				t.Fatalf("matchingMovieResult(%q) ID = %q, want matched", keyword, got.ID)
+			}
+		})
+	}
+}
+
+func TestMatchingMovieResultRejectsMismatch(t *testing.T) {
+	results := []metatube.MovieSearchResult{
+		{ID: "wrong", Number: "NAGAE2-0588"},
+		{ID: "empty", Number: ""},
+	}
+
+	if got, ok := matchingMovieResult("YMDD-284-C", results); ok {
+		t.Fatalf("matchingMovieResult() = %#v, want no match", got)
+	}
+}
+
+func TestMatchingMovieResultKeepsTitleSearchFallback(t *testing.T) {
+	results := []metatube.MovieSearchResult{
+		{ID: "first", Number: "YMDD-284"},
+	}
+
+	got, ok := matchingMovieResult("影片标题", results)
+	if !ok || got.ID != "first" {
+		t.Fatalf("matchingMovieResult() = %#v, %v, want first result", got, ok)
 	}
 }

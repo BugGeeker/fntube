@@ -19,12 +19,19 @@ export interface ScrapeLog {
   error: string
   created_at: string
   updated_at: string
+  current_step: string
+  progress: number
 }
 
 // 获取刮削日志列表（分页）
-export const getScrapeLogs = (page = 1, pageSize = 20, number = '') =>
+export const getScrapeLogs = (page = 1, pageSize = 20, number = '', status = '') =>
   request.get<{ total: number; items: ScrapeLog[] }>('/scrapelog/list', {
-    params: { page, page_size: pageSize, number: number || undefined },
+    params: {
+      page,
+      page_size: pageSize,
+      number: number || undefined,
+      status: status || undefined,
+    },
   })
 
 // 创建刮削日志
@@ -38,3 +45,5 @@ export const deleteScrapeLog = (id: number) =>
 // 重新刮削指定媒体项
 export const rescrapeItem = (itemGuid: string) =>
   request.post<{ status: string; message: string }>(`/scrapelog/rescrape/${itemGuid}`)
+
+export const scrapeLogEventsURL = './api/scrapelog/events'

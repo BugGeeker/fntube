@@ -17,6 +17,16 @@ const routes = [
     component: () => import('@/views/MediaItemsView.vue'),
   },
   {
+    path: '/movie-search',
+    name: 'MovieSearch',
+    component: () => import('@/views/MovieSearchView.vue'),
+  },
+  {
+    path: '/media-inconsistent',
+    name: 'MediaInconsistent',
+    component: () => import('@/views/MediaInconsistentView.vue'),
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('@/views/SettingsView.vue'),
@@ -30,6 +40,26 @@ const routes = [
     path: '/metatube-config',
     name: 'MetaTubeConfig',
     component: () => import('@/views/MetaTubeConfigView.vue'),
+  },
+  {
+    path: '/guangya-config',
+    name: 'GuangyaConfig',
+    component: () => import('@/views/GuangyaConfigView.vue'),
+  },
+  {
+    path: '/smartstrm-config',
+    name: 'SmartStrmConfig',
+    component: () => import('@/views/SmartStrmConfigView.vue'),
+  },
+  {
+    path: '/storage-config',
+    name: 'StorageConfig',
+    component: () => import('@/views/StorageConfigView.vue'),
+  },
+  {
+    path: '/guangya-cloud-jobs',
+    name: 'GuangyaCloudJobs',
+    component: () => import('@/views/GuangyaCloudJobsView.vue'),
   },
   {
     path: '/scrape-log',

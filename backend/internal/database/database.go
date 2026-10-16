@@ -19,7 +19,7 @@ func Init(dbPath string) (*gorm.DB, error) {
 	}
 
 	// 自动迁移
-	if err := db.AutoMigrate(&model.TrimMediaConfig{}, &model.MetaTubeConfig{}, &model.ScrapeLog{}, &model.ScrapeTask{}, &model.TaskRunRecord{}); err != nil {
+	if err := db.AutoMigrate(&model.TrimMediaConfig{}, &model.MetaTubeConfig{}, &model.MovieSearchConfig{}, &model.GuangyaConfig{}, &model.GuangyaCloudAddJob{}, &model.SmartStrmConfig{}, &model.StorageMapping{}, &model.ScrapeLog{}, &model.ScrapeTask{}, &model.TaskRunRecord{}); err != nil {
 		return nil, err
 	}
 

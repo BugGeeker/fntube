@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +26,9 @@ import (
 	"fntube/internal/model"
 	"fntube/internal/trimmedia"
 )
+
+var movieNumberPattern = regexp.MustCompile(`(?:^|[^A-Z0-9])([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*)(?:$|[^A-Z0-9])`)
+var movieNumberSuffixPattern = regexp.MustCompile(`^(?:[A-Z]+|\d{1,2}|[A-Z]+\d+|\d+[A-Z]+)$`)
 
 // Scheduler 刮削计划任务调度器
 type scrapeConfig struct {
@@ -53,20 +57,24 @@ func (c scrapeConfig) fields() map[string]bool {
 }
 
 type Scheduler struct {
-	db      *gorm.DB
-	service *trimmedia.Service
-	ticker  *time.Ticker
-	stopCh  chan struct{}
-	running bool
-	mu      sync.Mutex
+	db                   *gorm.DB
+	service              *trimmedia.Service
+	ticker               *time.Ticker
+	stopCh               chan struct{}
+	running              bool
+	mu                   sync.Mutex
+	scrapeSubscriberMu   sync.Mutex
+	scrapeSubscribers    map[uint]chan ScrapeLogEvent
+	nextScrapeSubscriber uint
 }
 
 // NewScheduler 创建调度器
 func NewScheduler(db *gorm.DB, service *trimmedia.Service) *Scheduler {
 	return &Scheduler{
-		db:      db,
-		service: service,
-		stopCh:  make(chan struct{}),
+		db:                db,
+		service:           service,
+		stopCh:            make(chan struct{}),
+		scrapeSubscribers: make(map[uint]chan ScrapeLogEvent),
 	}
 }
 
@@ -148,10 +156,18 @@ func (s *Scheduler) StartScrapeSingle(itemGUID string) error {
 	if err != nil {
 		return err
 	}
+	var oldLogs []model.ScrapeLog
+	if err := s.db.Select("id").Where("item_guid = ? AND id <> ?", itemGUID, logEntry.ID).Find(&oldLogs).Error; err != nil {
+		s.updateScrapeLogStatus(logEntry, model.ScrapeStatusFailed, err.Error())
+		return fmt.Errorf("读取旧刮削记录失败: %w", err)
+	}
 	if err := s.db.Where("item_guid = ? AND id <> ?", itemGUID, logEntry.ID).Delete(&model.ScrapeLog{}).Error; err != nil {
 		err = fmt.Errorf("清理旧刮削记录失败: %w", err)
 		s.updateScrapeLogStatus(logEntry, model.ScrapeStatusFailed, err.Error())
 		return err
+	}
+	for _, oldLog := range oldLogs {
+		s.publishScrapeLogDeleted(oldLog.ID)
 	}
 
 	go func() {
@@ -191,10 +207,12 @@ func (s *Scheduler) scrapeSingle(itemGUID string, logEntry *model.ScrapeLog) (st
 	if item == nil {
 		return fail(fmt.Errorf("获取媒体项失败: 返回数据为空"))
 	}
-	s.db.Model(logEntry).Updates(map[string]interface{}{
+	if err := s.updateScrapeLog(logEntry, map[string]interface{}{
 		"title":      item.Title,
 		"updated_at": time.Now(),
-	})
+	}); err != nil {
+		return fail(fmt.Errorf("更新刮削记录失败: %w", err))
+	}
 
 	// 读取 MetaTube 配置
 	var cfg scrapeConfig
@@ -364,7 +382,7 @@ func (s *Scheduler) createScrapeLog(itemGUID, title, method string, taskRunID ui
 		Status:    model.ScrapeStatusInProgress,
 		Steps:     "[]",
 	}
-	if err := s.db.Create(logEntry).Error; err != nil {
+	if err := s.CreateScrapeLog(logEntry); err != nil {
 		return nil, fmt.Errorf("创建刮削记录失败: %w", err)
 	}
 	return logEntry, nil
@@ -379,7 +397,7 @@ func (s *Scheduler) updateScrapeLogStatus(logEntry *model.ScrapeLog, status, err
 		"error":      errMsg,
 		"updated_at": time.Now(),
 	}
-	if err := s.db.Model(logEntry).Updates(updates).Error; err != nil {
+	if err := s.updateScrapeLog(logEntry, updates); err != nil {
 		log.Printf("[scheduler] 更新刮削记录失败 %d: %v", logEntry.ID, err)
 	}
 }
@@ -401,6 +419,88 @@ func resolveScrapeKeyword(item trimmedia.MediaServerItem, streamList *trimmedia.
 		return keyword, "original_title"
 	}
 	return "", ""
+}
+
+func normalizeMovieNumber(value string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	normalized = strings.NewReplacer(
+		"_", "-",
+		"‐", "-",
+		"‑", "-",
+		"‒", "-",
+		"–", "-",
+		"—", "-",
+		"−", "-",
+	).Replace(normalized)
+	for _, matches := range movieNumberPattern.FindAllStringSubmatch(normalized, -1) {
+		if len(matches) < 2 {
+			continue
+		}
+		candidate := matches[1]
+		parts := strings.Split(candidate, "-")
+		prefixHasDigit := len(parts) > 1 && strings.IndexFunc(strings.Join(parts[:len(parts)-1], "-"), func(r rune) bool {
+			return r >= '0' && r <= '9'
+		}) >= 0
+		if len(parts) > 1 && prefixHasDigit && movieNumberSuffixPattern.MatchString(parts[len(parts)-1]) {
+			parts = parts[:len(parts)-1]
+			candidate = strings.Join(parts, "-")
+		}
+		if strings.IndexFunc(candidate, func(r rune) bool { return r >= '0' && r <= '9' }) < 0 ||
+			candidate[len(candidate)-1] < '0' || candidate[len(candidate)-1] > '9' {
+			continue
+		}
+		return candidate
+	}
+	return ""
+}
+
+// NormalizeMovieNumber 暴露番号规范化逻辑，供媒体一致性检查复用。
+func NormalizeMovieNumber(value string) string {
+	return normalizeMovieNumber(value)
+}
+
+func matchingMovieResult(keyword string, results []metatube.MovieSearchResult) (metatube.MovieSearchResult, bool) {
+	expected := normalizeMovieNumber(keyword)
+	if expected == "" {
+		if len(results) == 0 {
+			return metatube.MovieSearchResult{}, false
+		}
+		return results[0], true
+	}
+	for _, result := range results {
+		if normalizeMovieNumber(result.Number) == expected {
+			return result, true
+		}
+	}
+	return metatube.MovieSearchResult{}, false
+}
+
+func movieSearchMismatchError(keyword string, results []metatube.MovieSearchResult) error {
+	expected := normalizeMovieNumber(keyword)
+	if expected == "" {
+		expected = strings.TrimSpace(keyword)
+	}
+
+	actual := make([]string, 0, len(results))
+	seen := make(map[string]struct{}, len(results))
+	for _, result := range results {
+		number := strings.TrimSpace(result.Number)
+		if number == "" {
+			number = "(空)"
+		}
+		if _, exists := seen[number]; exists {
+			continue
+		}
+		seen[number] = struct{}{}
+		actual = append(actual, number)
+		if len(actual) == 5 {
+			break
+		}
+	}
+	if len(actual) == 0 {
+		actual = append(actual, "(空)")
+	}
+	return fmt.Errorf("搜索结果番号不匹配，期望 %s，实际返回 %s", expected, strings.Join(actual, "、"))
 }
 
 // scrapeItem 对单个媒体项执行刮削，返回番号
@@ -427,11 +527,13 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 	if keywordSource != "file_name" && streamErr == nil {
 		log.Printf("[scheduler] 媒体文件名为空 %s，将使用影片标题继续刮削", item.Guid)
 	}
-	s.db.Model(logEntry).Updates(map[string]interface{}{
+	if err := s.updateScrapeLog(logEntry, map[string]interface{}{
 		"title":      item.Title,
 		"number":     keyword,
 		"updated_at": time.Now(),
-	})
+	}); err != nil {
+		return "", fmt.Errorf("更新刮削记录失败: %w", err)
+	}
 
 	// 辅助：记录步骤（同步骤名只保留一条，后调用覆盖前调用的状态）
 	stepRecords := []map[string]string{}
@@ -458,10 +560,12 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 			stepRecords = append(stepRecords, entry)
 		}
 		stepsJSON, _ := json.Marshal(stepRecords)
-		s.db.Model(logEntry).Updates(map[string]interface{}{
+		if err := s.updateScrapeLog(logEntry, map[string]interface{}{
 			"steps":      string(stepsJSON),
 			"updated_at": time.Now(),
-		})
+		}); err != nil {
+			log.Printf("[scheduler] 更新刮削步骤失败 %d: %v", logEntry.ID, err)
+		}
 	}
 	// 辅助：更新状态
 	updateStatus := func(status, errMsg string) {
@@ -472,7 +576,9 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 		if errMsg != "" {
 			updates["error"] = errMsg
 		}
-		s.db.Model(logEntry).Updates(updates)
+		if err := s.updateScrapeLog(logEntry, updates); err != nil {
+			log.Printf("[scheduler] 更新刮削状态失败 %d: %v", logEntry.ID, err)
+		}
 	}
 
 	// 1. 搜索 MetaTube
@@ -488,12 +594,18 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 		updateStatus(model.ScrapeStatusFailed, "未查询到影片")
 		return "", fmt.Errorf("无搜索结果")
 	}
+	matched, ok := matchingMovieResult(keyword, results)
+	if !ok {
+		err = movieSearchMismatchError(keyword, results)
+		addStep(model.StepSearch, "failed", err.Error())
+		updateStatus(model.ScrapeStatusFailed, err.Error())
+		return "", err
+	}
 	addStep(model.StepSearch, "success", "")
-	first := results[0]
 
 	// 2. 获取影片详情
 	addStep(model.StepGetDetail, "running", "")
-	info, err := mtClient.GetMovieInfo(first.Provider, first.ID)
+	info, err := mtClient.GetMovieInfo(matched.Provider, matched.ID)
 	if err != nil {
 		errMsg := "获取详情失败: " + err.Error()
 		addStep(model.StepGetDetail, "failed", errMsg)
@@ -505,6 +617,17 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 		addStep(model.StepGetDetail, "failed", errMsg)
 		updateStatus(model.ScrapeStatusFailed, errMsg)
 		return "", fmt.Errorf("获取详情失败: 返回数据为空")
+	}
+	expectedNumber := normalizeMovieNumber(keyword)
+	if expectedNumber != "" && normalizeMovieNumber(info.Number) != expectedNumber {
+		errMsg := fmt.Sprintf(
+			"影片详情番号不匹配，期望 %s，实际返回 %s",
+			expectedNumber,
+			strings.TrimSpace(info.Number),
+		)
+		addStep(model.StepGetDetail, "failed", errMsg)
+		updateStatus(model.ScrapeStatusFailed, errMsg)
+		return "", fmt.Errorf("%s", errMsg)
 	}
 	addStep(model.StepGetDetail, "success", "")
 
@@ -577,17 +700,22 @@ func (s *Scheduler) scrapeItem(item trimmedia.MediaServerItem, mtClient *metatub
 	}
 
 	// 更新日志中的标题
-	s.db.Model(logEntry).Updates(map[string]interface{}{
+	if err := s.updateScrapeLog(logEntry, map[string]interface{}{
 		"title":      detail.Title,
 		"updated_at": time.Now(),
-	})
+	}); err != nil {
+		return info.Number, fmt.Errorf("更新刮削记录失败: %w", err)
+	}
 
 	// 8. 保存
+	addStep(model.StepSave, "running", "")
 	_, err = s.service.SaveEditDetail(detail)
 	if err != nil {
+		addStep(model.StepSave, "failed", err.Error())
 		updateStatus(model.ScrapeStatusFailed, "保存失败: "+err.Error())
 		return info.Number, fmt.Errorf("保存失败: %w", err)
 	}
+	addStep(model.StepSave, "success", "")
 
 	// 保存成功 → 根据步骤结果标记状态：全部成功为"成功"，有非阻塞失败为"完成"
 	hasFailedStep := false

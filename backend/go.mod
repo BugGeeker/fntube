@@ -1,8 +1,9 @@
 module fntube
 
-go 1.22
+go 1.23
 
 require (
+	github.com/BugGeeker/guangyaclient-go v0.0.0-20261015023825-67a8a7d5df9d
 	github.com/cloudwego/hertz v0.10.6
 	github.com/glebarez/sqlite v1.11.0
 	gorm.io/gorm v1.26.1

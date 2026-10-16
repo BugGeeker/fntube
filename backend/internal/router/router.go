@@ -47,6 +47,18 @@ func Register(h *server.Hertz, db *gorm.DB, trimSvc *trimmedia.Service, sched *s
 	// MetaTube
 	handler.RegisterMetaTubeHandlers(h, db)
 
+	// 影片搜索
+	handler.RegisterMovieSearchHandlers(h, db)
+
+	// 光鸭云盘
+	handler.RegisterGuangyaHandlers(h, db)
+
+	// SmartStrm
+	handler.RegisterSmartStrmHandlers(h, db)
+
+	// 存储配置
+	handler.RegisterStorageConfigHandlers(h, db)
+
 	// 刮削日志
 	handler.RegisterScrapeLogHandlers(h, db, sched)
 

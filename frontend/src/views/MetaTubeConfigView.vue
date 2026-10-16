@@ -1,6 +1,6 @@
 <template>
   <a-form :model="form" layout="vertical" @finish="handleSave">
-    <a-card title="MetaTube 服务配置">
+    <a-card title="MetaTube设置">
 
       <!-- 服务地址 -->
       <a-form-item label="服务地址" name="host" required>

@@ -3,7 +3,8 @@
     <div class="app-container">
       <!-- 左侧悬浮导航菜单 -->
       <div class="floating-menu">
-        <a-menu v-model:selectedKeys="selectedKeys" mode="inline" :inline-collapsed="collapsed" :items="menuItems"
+        <a-menu v-model:selectedKeys="selectedKeys" v-model:openKeys="openKeys" mode="inline"
+          :inline-collapsed="collapsed" :items="menuItems"
           @click="handleMenuClick" class="menu" />
         <div class="menu-footer" :class="{ 'menu-footer-collapsed': collapsed }" role="contentinfo">
           <div class="menu-actions">
@@ -36,6 +37,7 @@
           </keep-alive>
         </router-view>
       </div>
+      <GuangyaCloudTaskProgress />
     </div>
   </a-config-provider>
 </template>
@@ -53,9 +55,16 @@ import {
   ScheduleOutlined,
   BulbOutlined,
   BulbFilled,
+  SearchOutlined,
+  CloudOutlined,
+  LinkOutlined,
+  DatabaseOutlined,
+  HistoryOutlined,
+  ToolOutlined,
 } from '@ant-design/icons-vue'
 import { theme } from 'ant-design-vue'
 import { useUiStore } from '@/stores/ui'
+import GuangyaCloudTaskProgress from '@/components/GuangyaCloudTaskProgress.vue'
 
 const appVersion = ref('')
 const route = useRoute()
@@ -106,14 +115,58 @@ const menuItems = [
     label: '媒体浏览',
   },
   {
-    key: '/config',
-    icon: () => h(SettingOutlined),
-    label: '飞牛影视配置',
+    key: '/movie-search',
+    icon: () => h(SearchOutlined),
+    label: '影片搜索',
   },
   {
-    key: '/metatube-config',
-    icon: () => h(TranslationOutlined),
-    label: 'MetaTube 配置',
+    key: '/tools',
+    icon: () => h(ToolOutlined),
+    label: '实用工具',
+    children: [
+      {
+        key: '/media-inconsistent',
+        icon: () => h(ToolOutlined),
+        label: '媒体刮削检查',
+      },
+    ],
+  },
+  {
+    key: '/settings',
+    icon: () => h(SettingOutlined),
+    label: '系统设置',
+    children: [
+      {
+        key: '/config',
+        icon: () => h(SettingOutlined),
+        label: '飞牛影视设置',
+      },
+      {
+        key: '/metatube-config',
+        icon: () => h(TranslationOutlined),
+        label: 'MetaTube设置',
+      },
+      {
+        key: '/guangya-config',
+        icon: () => h(CloudOutlined),
+        label: '光鸭云盘设置',
+      },
+      {
+        key: '/smartstrm-config',
+        icon: () => h(LinkOutlined),
+        label: 'SmartStrm设置',
+      },
+      {
+        key: '/storage-config',
+        icon: () => h(DatabaseOutlined),
+        label: '存储设置',
+      },
+    ],
+  },
+  {
+    key: '/guangya-cloud-jobs',
+    icon: () => h(HistoryOutlined),
+    label: '云添加记录',
   },
   {
     key: '/scrape-log',
@@ -130,17 +183,20 @@ const menuItems = [
 const mobileTabItems = [
   { key: '/', icon: DashboardOutlined, label: '总览' },
   { key: '/media', icon: VideoCameraOutlined, label: '媒体浏览' },
+  { key: '/movie-search', icon: SearchOutlined, label: '影片搜索' },
   { key: '/scrape-log', icon: FileTextOutlined, label: '刮削记录' },
   { key: '/scrape-task', icon: ScheduleOutlined, label: '刮削计划' },
-  { key: '/settings', icon: SettingOutlined, label: '配置' },
+  { key: '/settings', icon: SettingOutlined, label: '系统设置' },
 ]
 
 const mobileSelectedKey = computed(() => {
-  if (['/settings', '/config', '/metatube-config'].includes(route.path)) return '/settings'
+  if (['/settings', '/config', '/metatube-config', '/guangya-config', '/smartstrm-config', '/storage-config', '/guangya-cloud-jobs'].includes(route.path)) return '/settings'
+  if (route.path.startsWith('/tools')) return '/tools'
   return getMenuKey(route.path)
 })
 
 const selectedKeys = ref<string[]>([getMenuKey(route.path)])
+const openKeys = ref<string[]>(['/settings', '/tools'])
 
 function getMenuKey(path: string): string {
   if (path.startsWith('/media')) return '/media'
@@ -171,6 +227,9 @@ function handleMenuClick({ key }: { key: string }) {
   position: sticky;
   top: 12px;
   align-self: flex-start;
+  width: 220px;
+  min-width: 220px;
+  flex: 0 0 220px;
   height: calc(100vh - 24px);
   border-radius: 12px;
   margin: 12px;
@@ -214,8 +273,16 @@ function handleMenuClick({ key }: { key: string }) {
 }
 
 .floating-menu :deep(.ant-menu) {
+  width: 100%;
   height: 100%;
   border-right: none;
+}
+
+.floating-menu :deep(.ant-menu-title-content) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .main-content {
@@ -256,19 +323,22 @@ function handleMenuClick({ key }: { key: string }) {
 
   .mobile-tab {
     flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 2px;
     padding: 3px 0;
     color: v-bind('token.colorTextSecondary');
-    font-size: 11px;
+    font-size: 10px;
+    white-space: nowrap;
     background: transparent;
     border: 0;
+    overflow: hidden;
   }
 
   .mobile-tab :deep(svg) {
-    font-size: 20px;
+    font-size: 18px;
   }
 
   .mobile-tab.active {

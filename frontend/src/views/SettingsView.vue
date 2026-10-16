@@ -1,14 +1,30 @@
 <template>
   <div class="settings-page">
-    <a-card title="配置">
+    <a-card title="系统设置">
       <div class="config-links">
         <a-button size="large" block @click="router.push('/config')">
           <template #icon><SettingOutlined /></template>
-          飞牛影视配置
+          飞牛影视设置
         </a-button>
         <a-button size="large" block @click="router.push('/metatube-config')">
           <template #icon><TranslationOutlined /></template>
-          MetaTube 配置
+          MetaTube设置
+        </a-button>
+        <a-button size="large" block @click="router.push('/guangya-config')">
+          <template #icon><CloudOutlined /></template>
+          光鸭云盘设置
+        </a-button>
+        <a-button size="large" block @click="router.push('/smartstrm-config')">
+          <template #icon><LinkOutlined /></template>
+          SmartStrm设置
+        </a-button>
+        <a-button size="large" block @click="router.push('/storage-config')">
+          <template #icon><DatabaseOutlined /></template>
+          存储设置
+        </a-button>
+        <a-button size="large" block @click="router.push('/guangya-cloud-jobs')">
+          <template #icon><HistoryOutlined /></template>
+          云添加记录
         </a-button>
       </div>
     </a-card>
@@ -32,7 +48,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { SettingOutlined, TranslationOutlined, PictureOutlined, BulbFilled, BulbOutlined } from '@ant-design/icons-vue'
+import { SettingOutlined, TranslationOutlined, CloudOutlined, LinkOutlined, DatabaseOutlined, HistoryOutlined, PictureOutlined, BulbFilled, BulbOutlined } from '@ant-design/icons-vue'
 import { useUiStore } from '@/stores/ui'
 
 const router = useRouter()

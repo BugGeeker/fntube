@@ -5,6 +5,14 @@
         <a-space>
           <a-input-search v-model:value="numberQuery" placeholder="按番号查询" allow-clear :enter-button="true"
             class="header-search" @search="handleSearch" />
+          <a-select
+            v-model:value="statusQuery"
+            class="status-select"
+            placeholder="按状态筛选"
+            allow-clear
+            :options="statusOptions"
+            @change="handleStatusChange"
+          />
           <a-button :loading="loading" @click="loadLogs()">
             <template #icon>
               <ReloadOutlined />
@@ -96,13 +104,21 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { getScrapeLogs, deleteScrapeLog, rescrapeItem, type ScrapeLog, type ScrapeStep } from '@/api/scrapelog'
+import {
+  getScrapeLogs,
+  deleteScrapeLog,
+  rescrapeItem,
+  scrapeLogEventsURL,
+  type ScrapeLog,
+  type ScrapeStep,
+} from '@/api/scrapelog'
 import { formatDate } from '@/utils/format'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 import MediaDetailModal from '@/components/MediaDetailModal.vue'
 
 const loading = ref(false)
 const numberQuery = ref('')
+const statusQuery = ref('')
 const logs = ref<ScrapeLog[]>([])
 const currentPage = ref(1)
 const pageSize = ref(20)
@@ -110,7 +126,7 @@ const total = ref(0)
 const rescrapingGuid = ref<string | null>(null)
 const mediaDetailModelRef = ref<typeof MediaDetailModal>()
 let logsRequestPending = false
-let autoRefreshTimer: ReturnType<typeof setInterval> | undefined
+let eventSource: EventSource | undefined
 
 const pagination = ref({
   current: 1,
@@ -131,6 +147,13 @@ const columns = [
   { title: '操作', key: 'action', width: 160, fixed: 'right' },
 ]
 
+const statusOptions = [
+  { label: '进行中', value: 'in_progress' },
+  { label: '成功', value: 'success' },
+  { label: '完成', value: 'completed' },
+  { label: '失败', value: 'failed' },
+]
+
 function truncate(s: string, n: number): string {
   if (!s) return ''
   return s.length > n ? s.slice(0, n) + '...' : s
@@ -143,6 +166,7 @@ const stepLabelMap: Record<string, string> = {
   download_backdrop: '下载背景图',
   search_actor: '搜索演员',
   translate: '翻译',
+  save: '保存结果',
 }
 
 function stepLabel(step: string): string {
@@ -162,7 +186,7 @@ function stepsSummary(stepsStr: string): string {
   const steps = parseSteps(stepsStr)
   if (steps.length === 0) return '-'
   const total = steps.length
-  return `${total}/6`
+  return `${total}/7`
 }
 
 function stepsBadgeStatus(stepsStr: string): string {
@@ -177,7 +201,12 @@ async function loadLogs({ silent = false }: { silent?: boolean } = {}) {
   logsRequestPending = true
   if (!silent) loading.value = true
   try {
-    const { data } = await getScrapeLogs(currentPage.value, pageSize.value, numberQuery.value.trim())
+    const { data } = await getScrapeLogs(
+      currentPage.value,
+      pageSize.value,
+      numberQuery.value.trim(),
+      statusQuery.value,
+    )
     logs.value = data.items || []
     total.value = data.total
     pagination.value.current = currentPage.value
@@ -196,6 +225,11 @@ function handleSearch() {
   loadLogs()
 }
 
+function handleStatusChange() {
+  currentPage.value = 1
+  loadLogs()
+}
+
 function handleTableChange(pag: { current: number; pageSize: number }) {
   currentPage.value = pag.current
   pageSize.value = pag.pageSize
@@ -205,8 +239,8 @@ function handleTableChange(pag: { current: number; pageSize: number }) {
 async function handleDelete(record: ScrapeLog) {
   try {
     await deleteScrapeLog(record.id)
+    applyDeletedLog(record.id, false)
     message.success('删除成功')
-    loadLogs()
   } catch {
     message.error('删除失败')
   }
@@ -221,10 +255,6 @@ async function handleRescrape(record: { item_guid: string; title?: string }) {
   try {
     const { data } = await rescrapeItem(record.item_guid)
     message.success(data.message || '重新刮削已开始')
-    // 延迟刷新
-    setTimeout(() => {
-      loadLogs()
-    }, 5000)
   } catch {
     message.error('重新刮削失败')
   } finally {
@@ -232,20 +262,81 @@ async function handleRescrape(record: { item_guid: string; title?: string }) {
   }
 }
 
+function matchesCurrentFilter(record: ScrapeLog) {
+  const query = numberQuery.value.trim().toLowerCase()
+  const matchesNumber = !query || record.number.toLowerCase().includes(query)
+  const matchesStatus = !statusQuery.value || record.status === statusQuery.value
+  return matchesNumber && matchesStatus
+}
+
+function receiveLog(event: MessageEvent<string>) {
+  try {
+    const updated = JSON.parse(event.data) as ScrapeLog
+    const index = logs.value.findIndex((record) => record.id === updated.id)
+    if (index >= 0) {
+      if (!matchesCurrentFilter(updated)) {
+        logs.value = logs.value.filter((record) => record.id !== updated.id)
+        total.value = Math.max(0, total.value - 1)
+        pagination.value.total = total.value
+        return
+      }
+      const next = [...logs.value]
+      next[index] = updated
+      logs.value = next
+      return
+    }
+    if (!matchesCurrentFilter(updated)) return
+    if (currentPage.value !== 1) {
+      loadLogs({ silent: true })
+      return
+    }
+    logs.value = [updated, ...logs.value].slice(0, pageSize.value)
+    total.value++
+    pagination.value.total = total.value
+  } catch {
+    // Ignore malformed events and keep the history stream connected.
+  }
+}
+
+function applyDeletedLog(id: number, reloadMissing: boolean) {
+  const exists = logs.value.some((record) => record.id === id)
+  if (!exists) {
+    if (reloadMissing) loadLogs({ silent: true })
+    return
+  }
+  logs.value = logs.value.filter((record) => record.id !== id)
+  total.value = Math.max(0, total.value - 1)
+  pagination.value.total = total.value
+  if (logs.value.length === 0 && currentPage.value > 1) {
+    currentPage.value--
+    loadLogs({ silent: true })
+  }
+}
+
+function receiveDeleted(event: MessageEvent<string>) {
+  try {
+    const { id } = JSON.parse(event.data) as { id: number }
+    applyDeletedLog(id, true)
+  } catch {
+    // Ignore malformed events and keep the history stream connected.
+  }
+}
+
 onMounted(() => {
   loadLogs()
-  autoRefreshTimer = setInterval(() => {
-    loadLogs({ silent: true })
-  }, 5000)
+  eventSource = new EventSource(scrapeLogEventsURL)
+  eventSource.addEventListener('scrape-progress', receiveLog as EventListener)
+  eventSource.addEventListener('scrape-deleted', receiveDeleted as EventListener)
 })
 
 onUnmounted(() => {
-  if (autoRefreshTimer !== undefined) clearInterval(autoRefreshTimer)
+  eventSource?.close()
 })
 </script>
 
 <style scoped>
 .header-search { width: 240px; }
+.status-select { width: 120px; }
 .mobile-cards { display: none; }
 .card-title { font-weight: 600; color: #1677ff; cursor: pointer; }
 .card-meta { margin: 4px 0 8px; color: #999; font-size: 12px; }
@@ -254,6 +345,7 @@ onUnmounted(() => {
 .card-actions { margin-top: 8px; }
 @media (max-width: 639px) {
   .header-search { width: 160px; }
+  .status-select { width: 110px; }
   .desktop-table { display: none; }
   .mobile-cards { display: block; }
   .log-card { margin-bottom: 8px; }

@@ -316,6 +316,22 @@ export const getLibraries = () => request.get<Library[]>('/trimmedia/libraries')
 export const getLibraryViewType = (libraryId: string) =>
   request.get<{ view_type: string }>(`/trimmedia/libraries/${libraryId}/view-type`)
 
+export interface InconsistentMediaItem {
+  guid: string
+  title: string
+  original_title: string
+  poster: string
+  file_name: string
+  expected_number: string
+  actual_number: string
+  reason: string
+}
+
+export const getInconsistentItems = (libraryId: string) =>
+  request.get<{ total: number; items: InconsistentMediaItem[] }>(
+    `/trimmedia/libraries/${libraryId}/inconsistent-items`,
+  )
+
 // --- 媒体条目 ---
 
 export const getItems = (libraryId: string, start = 0, limit = 20) =>

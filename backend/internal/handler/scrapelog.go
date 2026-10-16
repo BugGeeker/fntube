@@ -2,11 +2,15 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"log"
 	"strconv"
+	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/protocol/sse"
 	"gorm.io/gorm"
 
 	"fntube/internal/model"
@@ -32,6 +36,7 @@ func RegisterScrapeLogHandlers(h *server.Hertz, db *gorm.DB, sched *scheduler.Sc
 	g.POST("/create", hd.create)
 	g.DELETE("/:id", hd.delete)
 	g.POST("/rescrape/:itemGuid", hd.rescrape)
+	g.GET("/events", hd.stream)
 }
 
 // list 获取刮削日志列表（分页）
@@ -48,6 +53,9 @@ func (h *ScrapeLogHandler) list(ctx context.Context, c *app.RequestContext) {
 	query := h.db.Model(&model.ScrapeLog{})
 	if number := string(c.Query("number")); number != "" {
 		query = query.Where("number LIKE ?", "%"+number+"%")
+	}
+	if status := string(c.Query("status")); status != "" {
+		query = query.Where("status = ?", status)
 	}
 
 	var total int64
@@ -94,7 +102,7 @@ func (h *ScrapeLogHandler) create(ctx context.Context, c *app.RequestContext) {
 		Number:   req.Number,
 		Method:   req.Method,
 	}
-	if err := h.db.Create(&log).Error; err != nil {
+	if err := h.scheduler.CreateScrapeLog(&log); err != nil {
 		c.JSON(500, map[string]string{"error": err.Error()})
 		return
 	}
@@ -104,13 +112,17 @@ func (h *ScrapeLogHandler) create(ctx context.Context, c *app.RequestContext) {
 
 // delete 删除刮削日志
 func (h *ScrapeLogHandler) delete(ctx context.Context, c *app.RequestContext) {
-	id := string(c.Param("id"))
-	if id == "" {
-		c.JSON(400, map[string]string{"error": "id 不能为空"})
+	id, err := strconv.ParseUint(string(c.Param("id")), 10, 64)
+	if err != nil || id == 0 {
+		c.JSON(400, map[string]string{"error": "id 无效"})
 		return
 	}
 
-	if err := h.db.Delete(&model.ScrapeLog{}, id).Error; err != nil {
+	if err := h.scheduler.DeleteScrapeLog(uint(id)); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(404, map[string]string{"error": "刮削记录不存在"})
+			return
+		}
 		c.JSON(500, map[string]string{"error": err.Error()})
 		return
 	}
@@ -134,4 +146,60 @@ func (h *ScrapeLogHandler) rescrape(ctx context.Context, c *app.RequestContext) 
 	}
 
 	c.JSON(200, map[string]string{"status": "ok", "message": "刮削已开始"})
+}
+
+func (h *ScrapeLogHandler) stream(ctx context.Context, c *app.RequestContext) {
+	events, unsubscribe := h.scheduler.SubscribeScrapeLogs()
+	defer unsubscribe()
+
+	writer := sse.NewWriter(c)
+	defer writer.Close()
+
+	active, err := h.scheduler.ActiveManualScrapeLogs()
+	if err != nil {
+		_ = writer.WriteEvent("", "error", []byte(`{"error":"读取进行中刮削任务失败"}`))
+		return
+	}
+	for _, logEntry := range active {
+		if err := writeScrapeLogEvent(writer, logEntry); err != nil {
+			return
+		}
+	}
+
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event := <-events:
+			if event.Type == "deleted" {
+				if err := writeScrapeLogDeletedEvent(writer, event.ID); err != nil {
+					return
+				}
+			} else if err := writeScrapeLogEvent(writer, event.Log); err != nil {
+				return
+			}
+		case <-heartbeat.C:
+			if err := writer.WriteKeepAlive(); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func writeScrapeLogEvent(writer *sse.Writer, logEntry model.ScrapeLog) error {
+	data, err := json.Marshal(logEntry)
+	if err != nil {
+		return err
+	}
+	return writer.WriteEvent("", "scrape-progress", data)
+}
+
+func writeScrapeLogDeletedEvent(writer *sse.Writer, id uint) error {
+	data, err := json.Marshal(map[string]uint{"id": id})
+	if err != nil {
+		return err
+	}
+	return writer.WriteEvent("", "scrape-deleted", data)
 }
