@@ -63,6 +63,58 @@ func fileList(items ...guangyaclient.FileItem) guangyaclient.FileListResponse {
 func TestProcessSingleFileCreatesFolderAndMovesFile(t *testing.T) {
 	client := &fakeCloudClient{
 		taskListResult: completedCloudTask("RKI-404-C.mp4", false),
+		createDirResults: []guangyaclient.FSCreateDirResponse{
+			{Data: guangyaclient.FSCreateDirData{
+				FileID: "collection-folder", FileName: "RKI", ParentID: "destination", ResType: 2,
+			}},
+			{Data: guangyaclient.FSCreateDirData{
+				FileID: "target-folder", FileName: "RKI-404-C", ParentID: "collection-folder", ResType: 2,
+			}},
+		},
+		filesByParent: map[string]guangyaclient.FileListResponse{
+			"destination": fileList(guangyaclient.FileItem{
+				FileID: "movie", FileName: "RKI-404-C.mp4", ParentID: "destination", ResType: 1,
+			}),
+			"collection-folder": fileList(),
+			"target-folder":     fileList(),
+		},
+		moveResult: guangyaclient.FileTaskResponse{
+			Data: guangyaclient.FileTaskData{TaskID: "move-task"},
+		},
+		fileTaskStatus: guangyaclient.TaskStatusResponse{
+			Data: guangyaclient.TaskStatusData{Status: 2, Progress: 100},
+		},
+	}
+	service := newCloudJobTestService(t, client)
+	job := cloudJob(t, false, "RKI-404-C.mp4", nil)
+
+	status, err := service.processCloudAddJob(&job)
+	if err != nil {
+		t.Fatalf("process job: %v", err)
+	}
+	if status != cloudJobCompleted ||
+		len(client.createDirNames) != 2 ||
+		client.createDirNames[0] != "RKI" ||
+		client.createDirNames[1] != "RKI-404-C" {
+		t.Fatalf("unexpected status or folders: status=%s folders=%#v", status, client.createDirNames)
+	}
+	if len(client.createDirParents) != 2 ||
+		client.createDirParents[0] != "destination" ||
+		client.createDirParents[1] != "collection-folder" {
+		t.Fatalf("unexpected folder parents: %#v", client.createDirParents)
+	}
+	if len(client.taskListIDs) != 1 || client.taskListIDs[0] != "cloud-task" {
+		t.Fatalf("cloud task was not queried by task ID: %#v", client.taskListIDs)
+	}
+	if len(client.moveFileIDs) != 1 || client.moveFileIDs[0][0] != "movie" ||
+		client.moveParents[0] != "target-folder" {
+		t.Fatalf("unexpected move calls: ids=%#v parents=%#v", client.moveFileIDs, client.moveParents)
+	}
+}
+
+func TestProcessSingleFileReusesConfiguredCollectionFolder(t *testing.T) {
+	client := &fakeCloudClient{
+		taskListResult: completedCloudTask("RKI-404-C.mp4", false),
 		filesByParent: map[string]guangyaclient.FileListResponse{
 			"destination": fileList(guangyaclient.FileItem{
 				FileID: "movie", FileName: "RKI-404-C.mp4", ParentID: "destination", ResType: 1,
@@ -83,12 +135,13 @@ func TestProcessSingleFileCreatesFolderAndMovesFile(t *testing.T) {
 	}
 	service := newCloudJobTestService(t, client)
 	job := cloudJob(t, false, "RKI-404-C.mp4", nil)
+	job.SmartStrmStorageRoot = "/日本/有码/RKI"
 
 	status, err := service.processCloudAddJob(&job)
 	if err != nil {
 		t.Fatalf("process job: %v", err)
 	}
-	if status != cloudJobCompleted || client.createDirName != "RKI-404-C" {
+	if status != cloudJobCompleted || len(client.createDirNames) != 1 || client.createDirName != "RKI-404-C" {
 		t.Fatalf("unexpected status or folder: status=%s folder=%s", status, client.createDirName)
 	}
 	if len(client.taskListIDs) != 1 || client.taskListIDs[0] != "cloud-task" {
@@ -107,12 +160,16 @@ func TestProcessCloudJobNotifiesSmartStrmWithOrganizedFolder(t *testing.T) {
 			"destination": fileList(guangyaclient.FileItem{
 				FileID: "movie", FileName: "T28-205.mp4", ParentID: "destination", ResType: 1,
 			}),
-			"target-folder": fileList(),
+			"collection-folder": fileList(),
+			"target-folder":     fileList(),
 		},
-		createDirResult: guangyaclient.FSCreateDirResponse{
-			Data: guangyaclient.FSCreateDirData{
-				FileID: "target-folder", FileName: "T28-205", ParentID: "destination", ResType: 2,
-			},
+		createDirResults: []guangyaclient.FSCreateDirResponse{
+			{Data: guangyaclient.FSCreateDirData{
+				FileID: "collection-folder", FileName: "T28", ParentID: "destination", ResType: 2,
+			}},
+			{Data: guangyaclient.FSCreateDirData{
+				FileID: "target-folder", FileName: "T28-205", ParentID: "collection-folder", ResType: 2,
+			}},
 		},
 		moveResult: guangyaclient.FileTaskResponse{
 			Data: guangyaclient.FileTaskData{TaskID: "move-task"},
@@ -137,7 +194,7 @@ func TestProcessCloudJobNotifiesSmartStrmWithOrganizedFolder(t *testing.T) {
 	}
 	job := cloudJob(t, false, "T28-205.mp4", nil)
 	job.SmartStrmTaskName = "日本"
-	job.SmartStrmStorageRoot = "/日本/有码/T28"
+	job.SmartStrmStorageRoot = "/日本/有码"
 	job.StrmSavePath = t.TempDir()
 	if err := service.db.Create(&job).Error; err != nil {
 		t.Fatalf("create cloud job: %v", err)
@@ -286,6 +343,47 @@ func TestProcessCloudJobCopiesGeneratedStrm(t *testing.T) {
 	}
 }
 
+func TestProcessCloudJobCopiesGeneratedStrmWithCollectionFolder(t *testing.T) {
+	t.Setenv("TRIM_PKGVAR", "/var/apps/fntube/var")
+	service := newCloudJobTestService(t, &fakeCloudClient{})
+	strmRoot := t.TempDir()
+	saveRoot := t.TempDir()
+	if err := service.db.Create(&model.SmartStrmConfig{
+		URL: "http://smartstrm", StrmRootPath: strmRoot,
+	}).Error; err != nil {
+		t.Fatalf("create SmartStrm config: %v", err)
+	}
+	sourceDir := filepath.Join(strmRoot, "日本", "有码", "RKI", "RKI-404")
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatalf("create source directory: %v", err)
+	}
+	sourceContent := "http://example.test/RKI-404.mp4"
+	if err := os.WriteFile(filepath.Join(sourceDir, "RKI-404.strm"), []byte(sourceContent), 0644); err != nil {
+		t.Fatalf("write source strm: %v", err)
+	}
+	job := cloudJob(t, false, "RKI-404.mp4", nil)
+	job.SmartStrmNotified = true
+	job.SmartStrmStorageRoot = "/日本/有码"
+	job.SmartStrmStoragePath = "/日本/有码/RKI/RKI-404"
+	job.StrmSavePath = saveRoot
+
+	status, err := service.processCloudAddJob(&job)
+	if err != nil {
+		t.Fatalf("process job: %v", err)
+	}
+	if status != cloudJobCompleted {
+		t.Fatalf("status = %q, want %q", status, cloudJobCompleted)
+	}
+	targetPath := filepath.Join(saveRoot, "RKI", "RKI-404", "RKI-404.strm")
+	content, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read copied strm: %v", err)
+	}
+	if string(content) != sourceContent {
+		t.Fatalf("copied content = %q, want %q", content, sourceContent)
+	}
+}
+
 func TestProcessCloudJobRejectsStrmCopyOutsideFnOS(t *testing.T) {
 	t.Setenv("TRIM_PKGVAR", "")
 	service := newCloudJobTestService(t, &fakeCloudClient{})
@@ -343,6 +441,18 @@ func TestProcessDirectoryRenamesSingleSelectedVideo(t *testing.T) {
 			"root": fileList(guangyaclient.FileItem{
 				FileID: "video", FileName: "original.mkv", FileSize: 1024, ParentID: "root", ResType: 1,
 			}),
+			"collection-folder": fileList(),
+		},
+		createDirResult: guangyaclient.FSCreateDirResponse{
+			Data: guangyaclient.FSCreateDirData{
+				FileID: "collection-folder", FileName: "RKI", ParentID: "destination", ResType: 2,
+			},
+		},
+		moveResult: guangyaclient.FileTaskResponse{
+			Data: guangyaclient.FileTaskData{TaskID: "move-task"},
+		},
+		fileTaskStatus: guangyaclient.TaskStatusResponse{
+			Data: guangyaclient.TaskStatusData{Status: 2, Progress: 100},
 		},
 	}
 	service := newCloudJobTestService(t, client)
@@ -354,9 +464,12 @@ func TestProcessDirectoryRenamesSingleSelectedVideo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("process job: %v", err)
 	}
-	if status != cloudJobCompleted || len(client.moveFileIDs) != 0 ||
+	if status != cloudJobCompleted || len(client.moveFileIDs) != 1 ||
 		len(client.renameNames) != 1 || client.renameNames[0] != "RKI-404-C.mkv" {
 		t.Fatalf("unexpected operations: status=%s moves=%#v renames=%#v", status, client.moveFileIDs, client.renameNames)
+	}
+	if client.moveParents[0] != "collection-folder" || client.moveFileIDs[0][0] != "root" {
+		t.Fatalf("movie folder was not moved into collection: ids=%#v parents=%#v", client.moveFileIDs, client.moveParents)
 	}
 }
 
@@ -381,6 +494,12 @@ func TestProcessDirectoryMovesNestedVideosAndNumbersNames(t *testing.T) {
 					FileID: "text", FileName: "readme.txt", ParentID: "disc", ResType: 1,
 				},
 			),
+			"collection-folder": fileList(),
+		},
+		createDirResult: guangyaclient.FSCreateDirResponse{
+			Data: guangyaclient.FSCreateDirData{
+				FileID: "collection-folder", FileName: "RKI", ParentID: "destination", ResType: 2,
+			},
 		},
 		moveResult: guangyaclient.FileTaskResponse{
 			Data: guangyaclient.FileTaskData{TaskID: "move-task"},
@@ -399,7 +518,7 @@ func TestProcessDirectoryMovesNestedVideosAndNumbersNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("process job: %v", err)
 	}
-	if status != cloudJobCompleted || len(client.moveFileIDs) != 2 {
+	if status != cloudJobCompleted || len(client.moveFileIDs) != 3 {
 		t.Fatalf("unexpected status or moves: status=%s moves=%#v", status, client.moveFileIDs)
 	}
 	if len(client.renameNames) != 2 ||
@@ -407,9 +526,26 @@ func TestProcessDirectoryMovesNestedVideosAndNumbersNames(t *testing.T) {
 		client.renameNames[1] != "RKI-404-C2.mkv" {
 		t.Fatalf("unexpected rename calls: %#v", client.renameNames)
 	}
-	for _, parent := range client.moveParents {
+	for _, parent := range client.moveParents[:2] {
 		if parent != "root" {
 			t.Fatalf("nested file moved to %v, want root", parent)
+		}
+	}
+	if client.moveParents[2] != "collection-folder" || client.moveFileIDs[2][0] != "root" {
+		t.Fatalf("movie folder was not moved into collection: ids=%#v parents=%#v", client.moveFileIDs, client.moveParents)
+	}
+}
+
+func TestCloudCollectionName(t *testing.T) {
+	tests := map[string]string{
+		"RKI-404-C.mp4": "RKI",
+		"T28-205":       "T28",
+		"n1901.mp4":     "N",
+		"FC2-PPV-123":   "FC2",
+	}
+	for input, expected := range tests {
+		if actual := cloudCollectionName(input); actual != expected {
+			t.Errorf("cloudCollectionName(%q) = %q, want %q", input, actual, expected)
 		}
 	}
 }

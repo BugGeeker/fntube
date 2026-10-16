@@ -38,45 +38,48 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 type fakeCloudClient struct {
-	resolveResult   guangyaclient.CloudResolveURLResponse
-	resolveErrs     []error
-	resolveCalls    int
-	resolveURL      string
-	foldersResult   guangyaclient.FileListResponse
-	foldersErr      error
-	folderParent    any
-	folderPage      int
-	folderSize      int
-	createDirResult guangyaclient.FSCreateDirResponse
-	createDirErr    error
-	createDirName   string
-	createDirParent any
-	createDirFail   bool
-	taskResult      guangyaclient.CloudCreateTaskResponse
-	taskErr         error
-	taskIndexes     []int
-	taskURL         string
-	taskParent      any
-	taskName        string
-	taskListResult  guangyaclient.CloudTaskListResponse
-	taskListErr     error
-	taskListIDs     []string
-	filesByParent   map[string]guangyaclient.FileListResponse
-	moveResult      guangyaclient.FileTaskResponse
-	moveErr         error
-	moveFileIDs     [][]any
-	moveParents     []any
-	renameErr       error
-	renameFileIDs   []string
-	renameNames     []string
-	fileTaskStatus  guangyaclient.TaskStatusResponse
-	fileTaskErr     error
-	refreshResult   guangyaclient.TokenResponse
-	refreshErr      error
-	refreshCalls    int
-	refreshValue    string
-	refreshExpiry   time.Time
-	creds           credentials
+	resolveResult    guangyaclient.CloudResolveURLResponse
+	resolveErrs      []error
+	resolveCalls     int
+	resolveURL       string
+	foldersResult    guangyaclient.FileListResponse
+	foldersErr       error
+	folderParent     any
+	folderPage       int
+	folderSize       int
+	createDirResult  guangyaclient.FSCreateDirResponse
+	createDirResults []guangyaclient.FSCreateDirResponse
+	createDirErr     error
+	createDirName    string
+	createDirNames   []string
+	createDirParent  any
+	createDirParents []any
+	createDirFail    bool
+	taskResult       guangyaclient.CloudCreateTaskResponse
+	taskErr          error
+	taskIndexes      []int
+	taskURL          string
+	taskParent       any
+	taskName         string
+	taskListResult   guangyaclient.CloudTaskListResponse
+	taskListErr      error
+	taskListIDs      []string
+	filesByParent    map[string]guangyaclient.FileListResponse
+	moveResult       guangyaclient.FileTaskResponse
+	moveErr          error
+	moveFileIDs      [][]any
+	moveParents      []any
+	renameErr        error
+	renameFileIDs    []string
+	renameNames      []string
+	fileTaskStatus   guangyaclient.TaskStatusResponse
+	fileTaskErr      error
+	refreshResult    guangyaclient.TokenResponse
+	refreshErr       error
+	refreshCalls     int
+	refreshValue     string
+	refreshExpiry    time.Time
+	creds            credentials
 }
 
 func (f *fakeCloudClient) CloudResolveURL(url string) (guangyaclient.CloudResolveURLResponse, error) {
@@ -103,8 +106,13 @@ func (f *fakeCloudClient) FSFiles(parentID any, page, pageSize, _, _ int, _ []in
 
 func (f *fakeCloudClient) FSCreateDir(dirName string, parentID any, failIfNameExist bool) (guangyaclient.FSCreateDirResponse, error) {
 	f.createDirName = dirName
+	f.createDirNames = append(f.createDirNames, dirName)
 	f.createDirParent = parentID
+	f.createDirParents = append(f.createDirParents, parentID)
 	f.createDirFail = failIfNameExist
+	if index := len(f.createDirNames) - 1; index < len(f.createDirResults) {
+		return f.createDirResults[index], f.createDirErr
+	}
 	return f.createDirResult, f.createDirErr
 }
 

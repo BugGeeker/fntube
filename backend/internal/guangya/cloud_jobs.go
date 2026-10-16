@@ -200,13 +200,17 @@ func (s *Service) organizeSingleFileTask(
 	if strings.TrimSpace(baseName) == "" {
 		return "", errors.New("无法根据名称创建目标文件夹")
 	}
+	collection, relativeCollection, err := s.ensureCollectionFolder(job, baseName)
+	if err != nil {
+		return "", fmt.Errorf("创建番号一级目录失败: %w", err)
+	}
 	if err := s.updateCloudJob(&job, map[string]any{
 		"current_step": "创建目标文件夹",
 		"progress":     80,
 	}); err != nil {
 		return "", err
 	}
-	folder, err := s.ensureFolder(baseName, job.ParentID)
+	folder, err := s.ensureFolder(baseName, collection.FileID)
 	if err != nil {
 		return "", fmt.Errorf("创建目标文件夹失败: %w", err)
 	}
@@ -232,7 +236,7 @@ func (s *Service) organizeSingleFileTask(
 				return "", err
 			}
 		}
-		return folder.FileName, nil
+		return path.Join(relativeCollection, folder.FileName), nil
 	}
 
 	file, ok, err := s.findDirectFile(job.ParentID, fileNames, false)
@@ -262,7 +266,7 @@ func (s *Service) organizeSingleFileTask(
 	if err := s.moveFiles([]any{file.FileID}, folder.FileID); err != nil {
 		return "", err
 	}
-	return folder.FileName, nil
+	return path.Join(relativeCollection, folder.FileName), nil
 }
 
 func (s *Service) organizeDirectoryTask(
@@ -279,10 +283,20 @@ func (s *Service) organizeDirectoryTask(
 	}); err != nil {
 		return "", err
 	}
+	collection, relativeCollection, err := s.ensureCollectionFolder(job, job.RequestedName)
+	if err != nil {
+		return "", fmt.Errorf("创建番号一级目录失败: %w", err)
+	}
 	rootNames := uniqueNonEmpty(task.FileName, job.RequestedName)
-	root, ok, err := s.findDirectFile(job.ParentID, rootNames, true)
+	root, ok, err := s.findDirectFile(collection.FileID, rootNames, true)
 	if err != nil {
 		return "", err
+	}
+	if !ok && collection.FileID != job.ParentID {
+		root, ok, err = s.findDirectFile(job.ParentID, rootNames, true)
+		if err != nil {
+			return "", err
+		}
 	}
 	if !ok {
 		return "", fmt.Errorf("未在保存目录找到云添加目录 %q", job.RequestedName)
@@ -328,10 +342,21 @@ func (s *Service) organizeDirectoryTask(
 			}
 		}
 	}
-	return root.FileName, nil
+	if root.ParentID != collection.FileID {
+		if err := s.updateCloudJob(&job, map[string]any{
+			"current_step": "移动影片目录到番号一级目录",
+			"progress":     97,
+		}); err != nil {
+			return "", err
+		}
+		if err := s.moveFiles([]any{root.FileID}, collection.FileID); err != nil {
+			return "", fmt.Errorf("移动影片目录 %q 失败: %w", root.FileName, err)
+		}
+	}
+	return path.Join(relativeCollection, root.FileName), nil
 }
 
-func (s *Service) notifySmartStrm(job *model.GuangyaCloudAddJob, folderName string) error {
+func (s *Service) notifySmartStrm(job *model.GuangyaCloudAddJob, organizedPath string) error {
 	if job.SmartStrmNotified || strings.TrimSpace(job.SmartStrmTaskName) == "" {
 		return nil
 	}
@@ -342,7 +367,7 @@ func (s *Service) notifySmartStrm(job *model.GuangyaCloudAddJob, folderName stri
 		}
 		return fmt.Errorf("读取 SmartStrm 配置失败: %w", err)
 	}
-	storagePath := path.Join("/", job.SmartStrmStorageRoot, folderName)
+	storagePath := path.Join("/", job.SmartStrmStorageRoot, organizedPath)
 	now := s.now()
 	if err := s.updateCloudJob(job, map[string]any{
 		"smart_strm_notified":     true,
@@ -650,6 +675,48 @@ func (s *Service) ensureFolder(name, parentID string) (CloudFolder, error) {
 		}, nil
 	}
 	return s.CreateFolder(name, parentID)
+}
+
+func (s *Service) ensureCollectionFolder(
+	job model.GuangyaCloudAddJob,
+	requestedName string,
+) (CloudFolder, string, error) {
+	collectionName := cloudCollectionName(requestedName)
+	if collectionName == "" {
+		return CloudFolder{}, "", errors.New("无法识别番号一级目录")
+	}
+	storageRoot := strings.TrimSpace(job.SmartStrmStorageRoot)
+	if storageRoot != "" && strings.EqualFold(path.Base(cleanCloudPath(storageRoot)), collectionName) {
+		return CloudFolder{
+			FileID:   job.ParentID,
+			FileName: collectionName,
+			ResType:  2,
+		}, "", nil
+	}
+	folder, err := s.ensureFolder(collectionName, job.ParentID)
+	if err != nil {
+		return CloudFolder{}, "", err
+	}
+	return folder, folder.FileName, nil
+}
+
+func cloudCollectionName(requestedName string) string {
+	baseName := strings.TrimSpace(strings.TrimSuffix(requestedName, path.Ext(requestedName)))
+	if baseName == "" {
+		return ""
+	}
+	if index := strings.IndexByte(baseName, '-'); index > 0 {
+		return strings.ToUpper(strings.TrimSpace(baseName[:index]))
+	}
+	for index, char := range baseName {
+		if index > 0 && char >= '0' && char <= '9' {
+			return strings.ToUpper(baseName[:index])
+		}
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z')) {
+			break
+		}
+	}
+	return strings.ToUpper(baseName)
 }
 
 func (s *Service) findDirectFile(parentID string, names []string, directory bool) (guangyaclient.FileItem, bool, error) {
