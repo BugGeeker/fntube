@@ -294,7 +294,7 @@ func TestProcessCloudJobWaitsForGeneratedStrmWithoutNotifyingAgain(t *testing.T)
 	if err != nil {
 		t.Fatalf("process job: %v", err)
 	}
-	if status != "" || job.CurrentStep != "等待 SmartStrm 生成 STRM" || job.Progress != 99 {
+	if status != "" || job.CurrentStep != "等待 SmartStrm 生成 STRM" || job.Progress != 94 {
 		t.Fatalf("unexpected waiting job: status=%q job=%#v", status, job)
 	}
 	if calls != 0 {
@@ -325,13 +325,28 @@ func TestProcessCloudJobCopiesGeneratedStrm(t *testing.T) {
 	job.SmartStrmStorageRoot = "/日本/有码"
 	job.SmartStrmStoragePath = "/日本/有码/T28/T28-205"
 	job.StrmSavePath = saveRoot
+	var searchKeyword string
+	var scrapedGUID string
+	service.SetMediaScrapeHooks(func(keyword string) ([]MediaSearchItem, error) {
+		searchKeyword = keyword
+		return []MediaSearchItem{
+			{GUID: "partial-guid", Title: "T28-205"},
+			{GUID: "other-guid", Title: "T28-205-CD1.strm"},
+		}, nil
+	}, func(guid string) error {
+		scrapedGUID = guid
+		return nil
+	})
 
 	status, err := service.processCloudAddJob(&job)
 	if err != nil {
 		t.Fatalf("process job: %v", err)
 	}
-	if status != cloudJobCompleted {
-		t.Fatalf("status = %q, want %q", status, cloudJobCompleted)
+	if status != "" || !job.StrmCopied || job.CurrentStep != "等待媒体库识别 STRM" || job.Progress != 98 {
+		t.Fatalf("unexpected waiting job: status=%q job=%#v", status, job)
+	}
+	if searchKeyword != "T28-205" || scrapedGUID != "" {
+		t.Fatalf("unexpected first media poll: keyword=%q scraped=%q", searchKeyword, scrapedGUID)
 	}
 	targetPath := filepath.Join(saveRoot, "T28", "T28-205", "T28-205.strm")
 	content, err := os.ReadFile(targetPath)
@@ -340,6 +355,28 @@ func TestProcessCloudJobCopiesGeneratedStrm(t *testing.T) {
 	}
 	if string(content) != sourceContent {
 		t.Fatalf("copied content = %q, want %q", content, sourceContent)
+	}
+
+	if err := os.Remove(filepath.Join(sourceDir, "T28-205.strm")); err != nil {
+		t.Fatalf("remove source strm: %v", err)
+	}
+	service.SetMediaScrapeHooks(func(keyword string) ([]MediaSearchItem, error) {
+		searchKeyword = keyword
+		return []MediaSearchItem{{GUID: "exact-guid", Title: " t28-205.STRM "}}, nil
+	}, func(guid string) error {
+		scrapedGUID = guid
+		return nil
+	})
+
+	status, err = service.processCloudAddJob(&job)
+	if err != nil {
+		t.Fatalf("process copied job: %v", err)
+	}
+	if status != cloudJobCompleted || scrapedGUID != "exact-guid" {
+		t.Fatalf("unexpected exact match result: status=%q scraped=%q", status, scrapedGUID)
+	}
+	if job.CurrentStep != "触发 STRM 媒体刮削" || job.Progress != 99 {
+		t.Fatalf("unexpected scraping progress: %#v", job)
 	}
 }
 
@@ -366,6 +403,19 @@ func TestProcessCloudJobCopiesGeneratedStrmWithCollectionFolder(t *testing.T) {
 	job.SmartStrmStorageRoot = "/日本/有码"
 	job.SmartStrmStoragePath = "/日本/有码/RKI/RKI-404"
 	job.StrmSavePath = saveRoot
+	if err := service.db.Create(&job).Error; err != nil {
+		t.Fatalf("create cloud job: %v", err)
+	}
+	var scrapedGUID string
+	service.SetMediaScrapeHooks(func(keyword string) ([]MediaSearchItem, error) {
+		if keyword != "RKI-404" {
+			t.Fatalf("search keyword = %q, want RKI-404", keyword)
+		}
+		return []MediaSearchItem{{GUID: "rki-guid", Title: "RKI-404.strm"}}, nil
+	}, func(guid string) error {
+		scrapedGUID = guid
+		return nil
+	})
 
 	status, err := service.processCloudAddJob(&job)
 	if err != nil {
@@ -373,6 +423,16 @@ func TestProcessCloudJobCopiesGeneratedStrmWithCollectionFolder(t *testing.T) {
 	}
 	if status != cloudJobCompleted {
 		t.Fatalf("status = %q, want %q", status, cloudJobCompleted)
+	}
+	if !job.StrmCopied || scrapedGUID != "rki-guid" {
+		t.Fatalf("STRM was not copied and scraped: copied=%v guid=%q", job.StrmCopied, scrapedGUID)
+	}
+	var persisted model.GuangyaCloudAddJob
+	if err := service.db.First(&persisted, job.ID).Error; err != nil {
+		t.Fatalf("read persisted cloud job: %v", err)
+	}
+	if !persisted.StrmCopied {
+		t.Fatal("copied STRM state was not persisted")
 	}
 	targetPath := filepath.Join(saveRoot, "RKI", "RKI-404", "RKI-404.strm")
 	content, err := os.ReadFile(targetPath)
@@ -599,6 +659,22 @@ func TestCloudAddJobPersistsProgressAndPublishesUpdates(t *testing.T) {
 	}
 	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].TaskID != "task-progress" {
 		t.Fatalf("unexpected cloud job page: %#v", page)
+	}
+}
+
+func TestCloudJobProgressDoesNotDecrease(t *testing.T) {
+	service := newCloudJobTestService(t, &fakeCloudClient{})
+	job := cloudJob(t, false, "RKI-404.mp4", nil)
+	job.Progress = 98
+
+	if err := service.updateCloudJob(&job, map[string]any{
+		"current_step": "等待 SmartStrm 生成 STRM",
+		"progress":     94,
+	}); err != nil {
+		t.Fatalf("update cloud job: %v", err)
+	}
+	if job.Progress != 98 {
+		t.Fatalf("progress decreased to %d", job.Progress)
 	}
 }
 

@@ -95,6 +95,7 @@ func (s *Service) processPendingCloudJobs() {
 		return
 	}
 	for i := range jobs {
+		// 第2步：后台轮询并处理等待中的光鸭云添加任务。
 		status, err := s.processCloudAddJob(&jobs[i])
 		if err != nil {
 			log.Printf("[guangya] 云添加任务 %s 后处理失败: %v", jobs[i].TaskID, err)
@@ -106,17 +107,31 @@ func (s *Service) processPendingCloudJobs() {
 }
 
 func (s *Service) processCloudAddJob(job *model.GuangyaCloudAddJob) (string, error) {
+	// 第1步：创建光鸭云添加任务（任务创建逻辑见 service.go），本流程从任务后处理开始。
 	if job.SmartStrmNotified {
-		generated, err := s.copyGeneratedStrm(job)
-		if err != nil {
-			return cloudJobFailed, err
+		if !job.StrmCopied {
+			// 第10步：SmartStrm 已收到通知，检查并复制生成的 STRM 文件。
+			generated, err := s.copyGeneratedStrm(job)
+			if err != nil {
+				return cloudJobFailed, err
+			}
+			if !generated {
+				return "", nil
+			}
+			if err := s.updateCloudJob(job, map[string]any{
+				"strm_copied":  true,
+				"current_step": "等待媒体库识别 STRM",
+				"progress":     98,
+				"error":        "",
+			}); err != nil {
+				return "", err
+			}
 		}
-		if !generated {
-			return "", nil
-		}
-		return cloudJobCompleted, nil
+		// 第12步：轮询飞牛影视，等待媒体库识别已复制的 STRM 文件。
+		return s.searchAndScrapeCopiedStrm(job)
 	}
 
+	// 第3步：查询光鸭云添加任务的最新状态。
 	task, found, err := s.cloudTask(job.TaskID)
 	if err != nil {
 		return "", err
@@ -126,9 +141,10 @@ func (s *Service) processCloudAddJob(job *model.GuangyaCloudAddJob) (string, err
 	}
 	switch task.Status {
 	case 2:
+		// 第4步：光鸭云添加完成，开始整理已添加的文件。
 		if err := s.updateCloudJob(job, map[string]any{
 			"current_step": "云添加完成，正在整理文件",
-			"progress":     75,
+			"progress":     45,
 			"error":        "",
 		}); err != nil {
 			return "", err
@@ -139,13 +155,16 @@ func (s *Service) processCloudAddJob(job *model.GuangyaCloudAddJob) (string, err
 		}
 		var organizedFolder string
 		if job.ResolvedIsDirectory {
+			// 第5步：整理云添加目录及目录中的已选文件。
 			organizedFolder, err = s.organizeDirectoryTask(*job, task, selected)
 		} else {
+			// 第5步：整理云添加的单个文件。
 			organizedFolder, err = s.organizeSingleFileTask(*job, task)
 		}
 		if err != nil {
 			return "", err
 		}
+		// 第9步：通知 SmartStrm 生成 STRM 文件。
 		if err := s.notifySmartStrm(job, organizedFolder); err != nil {
 			return cloudJobFailed, err
 		}
@@ -161,10 +180,10 @@ func (s *Service) processCloudAddJob(job *model.GuangyaCloudAddJob) (string, err
 		return cloudJobFailed, errors.New(message)
 	default:
 		step := "等待光鸭云盘处理"
-		progress := 15
+		progress := 10
 		if task.Status == 1 {
 			step = "光鸭云盘正在添加文件"
-			progress = 60
+			progress = 30
 		}
 		if err := s.updateCloudJob(job, map[string]any{
 			"current_step": step,
@@ -200,16 +219,24 @@ func (s *Service) organizeSingleFileTask(
 	if strings.TrimSpace(baseName) == "" {
 		return "", errors.New("无法根据名称创建目标文件夹")
 	}
+	// 第6步：创建或确认番号一级目录。
+	if err := s.updateCloudJob(&job, map[string]any{
+		"current_step": "创建番号一级目录",
+		"progress":     50,
+	}); err != nil {
+		return "", err
+	}
 	collection, relativeCollection, err := s.ensureCollectionFolder(job, baseName)
 	if err != nil {
 		return "", fmt.Errorf("创建番号一级目录失败: %w", err)
 	}
 	if err := s.updateCloudJob(&job, map[string]any{
 		"current_step": "创建目标文件夹",
-		"progress":     80,
+		"progress":     58,
 	}); err != nil {
 		return "", err
 	}
+	// 第7步：创建或确认影片目标文件夹。
 	folder, err := s.ensureFolder(baseName, collection.FileID)
 	if err != nil {
 		return "", fmt.Errorf("创建目标文件夹失败: %w", err)
@@ -217,10 +244,11 @@ func (s *Service) organizeSingleFileTask(
 
 	if err := s.updateCloudJob(&job, map[string]any{
 		"current_step": "查找已添加文件",
-		"progress":     86,
+		"progress":     66,
 	}); err != nil {
 		return "", err
 	}
+	// 第8步：查找已添加的文件，并按需重命名、移动到目标文件夹。
 	fileNames := uniqueNonEmpty(job.RequestedName, task.FileName)
 	if existing, ok, err := s.findDirectFile(folder.FileID, fileNames, false); err != nil {
 		return "", err
@@ -228,13 +256,19 @@ func (s *Service) organizeSingleFileTask(
 		if existing.FileName != job.RequestedName {
 			if err := s.updateCloudJob(&job, map[string]any{
 				"current_step": "重命名文件",
-				"progress":     95,
+				"progress":     74,
 			}); err != nil {
 				return "", err
 			}
 			if err := s.renameFile(existing.FileID, job.RequestedName); err != nil {
 				return "", err
 			}
+		}
+		if err := s.updateCloudJob(&job, map[string]any{
+			"current_step": "文件已在目标文件夹",
+			"progress":     82,
+		}); err != nil {
+			return "", err
 		}
 		return path.Join(relativeCollection, folder.FileName), nil
 	}
@@ -247,9 +281,10 @@ func (s *Service) organizeSingleFileTask(
 		return "", fmt.Errorf("未在保存目录找到已完成的文件 %q", job.RequestedName)
 	}
 	if file.FileName != job.RequestedName {
+		// 第8步-1：将文件重命名为用户请求的名称。
 		if err := s.updateCloudJob(&job, map[string]any{
 			"current_step": "重命名文件",
-			"progress":     92,
+			"progress":     74,
 		}); err != nil {
 			return "", err
 		}
@@ -259,10 +294,11 @@ func (s *Service) organizeSingleFileTask(
 	}
 	if err := s.updateCloudJob(&job, map[string]any{
 		"current_step": "移动文件到目标文件夹",
-		"progress":     96,
+		"progress":     82,
 	}); err != nil {
 		return "", err
 	}
+	// 第8步-2：将文件移动到影片目标文件夹。
 	if err := s.moveFiles([]any{file.FileID}, folder.FileID); err != nil {
 		return "", err
 	}
@@ -277,9 +313,10 @@ func (s *Service) organizeDirectoryTask(
 	if len(selected) == 0 {
 		return "", errors.New("没有可后处理的已选文件")
 	}
+	// 第6步：查找云添加生成的根目录。
 	if err := s.updateCloudJob(&job, map[string]any{
 		"current_step": "查找云添加目录",
-		"progress":     80,
+		"progress":     50,
 	}); err != nil {
 		return "", err
 	}
@@ -302,9 +339,10 @@ func (s *Service) organizeDirectoryTask(
 		return "", fmt.Errorf("未在保存目录找到云添加目录 %q", job.RequestedName)
 	}
 
+	// 第7步：递归扫描云添加目录中的所有文件。
 	if err := s.updateCloudJob(&job, map[string]any{
 		"current_step": "扫描文件目录",
-		"progress":     84,
+		"progress":     58,
 	}); err != nil {
 		return "", err
 	}
@@ -314,7 +352,8 @@ func (s *Service) organizeDirectoryTask(
 	}
 	used := make(map[string]bool)
 	for index, wanted := range selected {
-		fileProgress := 85 + (index * 12 / len(selected))
+		// 第8步：逐个整理已选文件，必要时移动并重命名。
+		fileProgress := 62 + ((index + 1) * 18 / len(selected))
 		if err := s.updateCloudJob(&job, map[string]any{
 			"current_step": fmt.Sprintf("整理文件 %d/%d", index+1, len(selected)),
 			"progress":     fileProgress,
@@ -343,9 +382,10 @@ func (s *Service) organizeDirectoryTask(
 		}
 	}
 	if root.ParentID != collection.FileID {
+		// 第8步-1：将整理完成的影片目录移动到番号一级目录。
 		if err := s.updateCloudJob(&job, map[string]any{
 			"current_step": "移动影片目录到番号一级目录",
-			"progress":     97,
+			"progress":     84,
 		}); err != nil {
 			return "", err
 		}
@@ -369,12 +409,13 @@ func (s *Service) notifySmartStrm(job *model.GuangyaCloudAddJob, organizedPath s
 	}
 	storagePath := path.Join("/", job.SmartStrmStorageRoot, organizedPath)
 	now := s.now()
+	// 第9步：记录 SmartStrm 通知状态并发起 STRM 生成任务。
 	if err := s.updateCloudJob(job, map[string]any{
 		"smart_strm_notified":     true,
 		"smart_strm_notified_at":  &now,
 		"smart_strm_storage_path": storagePath,
 		"current_step":            "通知 SmartStrm 生成 STRM",
-		"progress":                98,
+		"progress":                90,
 		"error":                   "",
 	}); err != nil {
 		return err
@@ -382,9 +423,10 @@ func (s *Service) notifySmartStrm(job *model.GuangyaCloudAddJob, organizedPath s
 	if err := s.runSmartStrm(config, job.SmartStrmTaskName, storagePath); err != nil {
 		return fmt.Errorf("通知 SmartStrm 失败: %w", err)
 	}
+	// 第10步：等待 SmartStrm 异步生成 STRM 文件。
 	return s.updateCloudJob(job, map[string]any{
 		"current_step": "等待 SmartStrm 生成 STRM",
-		"progress":     99,
+		"progress":     94,
 	})
 }
 
@@ -414,11 +456,12 @@ func (s *Service) copyGeneratedStrm(job *model.GuangyaCloudAddJob) (bool, error)
 		filepath.FromSlash(strings.TrimPrefix(storagePath, "/")),
 		folderName+".strm",
 	)
+	// 第10步：检查 SmartStrm 是否已生成 STRM 文件，未生成时等待下一轮轮询。
 	if _, err := os.Stat(sourcePath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			if updateErr := s.updateCloudJob(job, map[string]any{
 				"current_step": "等待 SmartStrm 生成 STRM",
-				"progress":     99,
+				"progress":     94,
 				"error":        "",
 			}); updateErr != nil {
 				return false, updateErr
@@ -426,6 +469,13 @@ func (s *Service) copyGeneratedStrm(job *model.GuangyaCloudAddJob) (bool, error)
 			return false, nil
 		}
 		return false, fmt.Errorf("检查 SmartStrm 文件失败: %w", err)
+	}
+	if err := s.updateCloudJob(job, map[string]any{
+		"current_step": "检查 SmartStrm 生成的 STRM 文件",
+		"progress":     96,
+		"error":        "",
+	}); err != nil {
+		return false, err
 	}
 	if !isFnOSEnvironment() {
 		return false, errors.New("当前不是飞牛环境，无法复制 STRM 文件")
@@ -439,9 +489,10 @@ func (s *Service) copyGeneratedStrm(job *model.GuangyaCloudAddJob) (bool, error)
 		filepath.FromSlash(relativePath),
 		folderName+".strm",
 	)
+	// 第11步：将生成的 STRM 文件复制到配置的保存目录。
 	if err := s.updateCloudJob(job, map[string]any{
 		"current_step": "复制 STRM 文件",
-		"progress":     99,
+		"progress":     97,
 		"error":        "",
 	}); err != nil {
 		return false, err
@@ -450,6 +501,50 @@ func (s *Service) copyGeneratedStrm(job *model.GuangyaCloudAddJob) (bool, error)
 		return false, err
 	}
 	return true, nil
+}
+
+func (s *Service) searchAndScrapeCopiedStrm(job *model.GuangyaCloudAddJob) (string, error) {
+	if s.searchMedia == nil || s.startScrape == nil {
+		return "", errors.New("媒体搜索或刮削服务未配置")
+	}
+	folderName := path.Base(cleanCloudPath(job.SmartStrmStoragePath))
+	if folderName == "." || folderName == "/" || strings.TrimSpace(folderName) == "" {
+		return "", errors.New("无法确定待搜索的 STRM 文件名")
+	}
+	targetName := folderName + ".strm"
+	if err := s.updateCloudJob(job, map[string]any{
+		"current_step": "等待媒体库识别 STRM",
+		"progress":     98,
+		"error":        "",
+	}); err != nil {
+		return "", err
+	}
+	items, err := s.searchMedia(folderName)
+	if err != nil {
+		return "", fmt.Errorf("搜索媒体库失败: %w", err)
+	}
+	for _, item := range items {
+		if !strings.EqualFold(strings.TrimSpace(item.Title), targetName) {
+			continue
+		}
+		guid := strings.TrimSpace(item.GUID)
+		if guid == "" {
+			return "", fmt.Errorf("媒体 %q 缺少 GUID", targetName)
+		}
+		// 第13步：找到完全匹配的 STRM 媒体后，创建单条刮削任务。
+		if err := s.updateCloudJob(job, map[string]any{
+			"current_step": "触发 STRM 媒体刮削",
+			"progress":     99,
+			"error":        "",
+		}); err != nil {
+			return "", err
+		}
+		if err := s.startScrape(guid); err != nil {
+			return "", fmt.Errorf("触发 STRM 媒体刮削失败: %w", err)
+		}
+		return cloudJobCompleted, nil
+	}
+	return "", nil
 }
 
 func cleanCloudPath(value string) string {
@@ -592,6 +687,8 @@ func (s *Service) updateCloudJob(job *model.GuangyaCloudAddJob, updates map[stri
 			updates["progress"] = 0
 		} else if progress > 100 {
 			updates["progress"] = 100
+		} else if progress < job.Progress {
+			updates["progress"] = job.Progress
 		}
 	}
 	if job.ID == 0 {
@@ -626,6 +723,7 @@ func (s *Service) finishCloudJobAttempt(job *model.GuangyaCloudAddJob, status st
 			}
 		}
 	} else if status == cloudJobCompleted {
+		// 第14步：所有处理完成，更新任务为已完成。
 		now := s.now()
 		updates["error"] = ""
 		updates["current_step"] = "已完成"
@@ -662,6 +760,9 @@ func applyCloudJobUpdates(job *model.GuangyaCloudAddJob, updates map[string]any)
 	}
 	if value, ok := updates["smart_strm_storage_path"].(string); ok {
 		job.SmartStrmStoragePath = value
+	}
+	if value, ok := updates["strm_copied"].(bool); ok {
+		job.StrmCopied = value
 	}
 }
 

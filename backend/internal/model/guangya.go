@@ -35,6 +35,7 @@ type GuangyaCloudAddJob struct {
 	StrmSavePath         string     `json:"strm_save_path"`
 	SmartStrmNotified    bool       `json:"smartstrm_notified" gorm:"column:smart_strm_notified"`
 	SmartStrmNotifiedAt  *time.Time `json:"smartstrm_notified_at,omitempty" gorm:"column:smart_strm_notified_at"`
+	StrmCopied           bool       `json:"strm_copied" gorm:"column:strm_copied"`
 	Status               string     `json:"status" gorm:"index;not null"`
 	CurrentStep          string     `json:"current_step"`
 	Progress             int        `json:"progress"`

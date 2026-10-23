@@ -49,6 +49,7 @@ func TestInitMigratesLegacyCloudJobSmartStrmColumns(t *testing.T) {
 		"smart_strm_storage_path",
 		"smart_strm_notified",
 		"smart_strm_notified_at",
+		"strm_copied",
 	} {
 		if !db.Migrator().HasColumn(&model.GuangyaCloudAddJob{}, column) {
 			t.Fatalf("migrated cloud job table is missing column %q", column)

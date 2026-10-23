@@ -52,7 +52,7 @@ func Register(h *server.Hertz, db *gorm.DB, trimSvc *trimmedia.Service, sched *s
 	handler.RegisterMovieSearchHandlers(h, db)
 
 	// 光鸭云盘
-	handler.RegisterGuangyaHandlers(h, db)
+	handler.RegisterGuangyaHandlers(h, db, trimSvc, sched)
 
 	// SmartStrm
 	handler.RegisterSmartStrmHandlers(h, db)

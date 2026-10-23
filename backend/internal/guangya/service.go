@@ -127,6 +127,8 @@ type Service struct {
 	db             *gorm.DB
 	newClient      clientFactory
 	newCloud       cloudClientFactory
+	searchMedia    func(string) ([]MediaSearchItem, error)
+	startScrape    func(string) error
 	now            func() time.Time
 	mu             sync.Mutex
 	tokenMu        sync.Mutex
@@ -138,10 +140,23 @@ type Service struct {
 	runSmartStrm   func(model.SmartStrmConfig, string, string) error
 }
 
+type MediaSearchItem struct {
+	GUID  string
+	Title string
+}
+
 func NewService(db *gorm.DB) *Service {
 	return newService(db, func() authClient {
 		return &sdkClient{Client: guangyaclient.NewClient("", "", "")}
 	})
+}
+
+func (s *Service) SetMediaScrapeHooks(
+	search func(string) ([]MediaSearchItem, error),
+	startScrape func(string) error,
+) {
+	s.searchMedia = search
+	s.startScrape = startScrape
 }
 
 func newService(db *gorm.DB, factory clientFactory) *Service {

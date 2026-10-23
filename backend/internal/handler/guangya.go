@@ -14,14 +14,35 @@ import (
 	"gorm.io/gorm"
 
 	"fntube/internal/guangya"
+	"fntube/internal/scheduler"
+	"fntube/internal/trimmedia"
 )
 
 type GuangyaHandler struct {
 	service *guangya.Service
 }
 
-func RegisterGuangyaHandlers(h *server.Hertz, db *gorm.DB) {
+func RegisterGuangyaHandlers(
+	h *server.Hertz,
+	db *gorm.DB,
+	trimSvc *trimmedia.Service,
+	sched *scheduler.Scheduler,
+) {
 	service := guangya.NewService(db)
+	service.SetMediaScrapeHooks(func(keyword string) ([]guangya.MediaSearchItem, error) {
+		items, err := trimSvc.Search(keyword)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]guangya.MediaSearchItem, 0, len(items))
+		for _, item := range items {
+			result = append(result, guangya.MediaSearchItem{
+				GUID:  item.Guid,
+				Title: item.Title,
+			})
+		}
+		return result, nil
+	}, sched.StartScrapeSingle)
 	service.StartCloudJobWorker()
 	hd := &GuangyaHandler{service: service}
 	g := h.Group("/api/guangya")

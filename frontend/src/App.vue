@@ -63,7 +63,6 @@ import {
   LinkOutlined,
   DatabaseOutlined,
   HistoryOutlined,
-  ToolOutlined,
 } from '@ant-design/icons-vue'
 import { theme } from 'ant-design-vue'
 import { useUiStore } from '@/stores/ui'
@@ -139,23 +138,6 @@ const menuItems = [
     label: '影片搜索',
   },
   {
-    key: '/tools',
-    icon: () => h(ToolOutlined),
-    label: '实用工具',
-    children: [
-      {
-        key: '/media-inconsistent',
-        icon: () => h(ToolOutlined),
-        label: '媒体刮削检查',
-      },
-      {
-        key: '/system-test',
-        icon: () => h(ToolOutlined),
-        label: '系统能力测试',
-      },
-    ],
-  },
-  {
     key: '/settings',
     icon: () => h(SettingOutlined),
     label: '系统设置',
@@ -220,7 +202,7 @@ const mobileSelectedKey = computed(() => {
 })
 
 const selectedKeys = ref<string[]>([getMenuKey(route.path)])
-const openKeys = ref<string[]>(['/settings', '/tools'])
+const openKeys = ref<string[]>([])
 
 function getMenuKey(path: string): string {
   if (path.startsWith('/media')) return '/media'
